@@ -329,6 +329,8 @@ pub const App = struct {
         // vídeo que toque antes do primeiro quadro já acha a pasta do FFmpeg.
         proxy.set(app.st.settings.proxy.slice(), app.st.settings.proxy_all);
         ffmpeg.setDir(app.st.settings.ffmpeg_dir.slice());
+        // O mudo da última vez continua ao entrar numa call.
+        app.st.muted = app.st.settings.mute_me;
         // No QA e nos prints ninguém abre o microfone de verdade.
         voz_audio.force_dummy = opts.qa or opts.shot != null;
         voz_audio.qa_sounds_dir = opts.qa or opts.shot != null;
@@ -1050,7 +1052,12 @@ pub const App = struct {
 
         // Fontes do tema (carregadas sob demanda e reaproveitadas). Sem fonte nenhuma no
         // sistema, a embutida entra aqui, fora do quadro, antes de `uiFamily` pedir.
+        // A escolhida nas Configurações (uma das instaladas no dispositivo) também, antes:
+        // ela vence a do tema (ver `textFamily`), e a do tema fica para quando ela sumir.
+        const set = &app.st.settings;
         app.fonts.forgetMissing();
+        if (set.font_ui.len > 0) _ = app.fonts.installedFamily(set.font_ui.slice()) catch {};
+        if (set.font_mono.len > 0) _ = app.fonts.installedFamily(set.font_mono.slice()) catch {};
         _ = app.fonts.family(th.font_ui) catch app.fonts.family("Inter") catch app.fonts.builtin();
         _ = app.fonts.family(th.font_mono) catch app.fonts.family("monospace") catch app.fonts.builtin();
         // Fontes pedidas por componentes (`font="Liberation Serif"`).
@@ -1302,6 +1309,15 @@ pub const App = struct {
 
     pub fn uiFamily(app: *App, name: []const u8) *fonts_mod.Family {
         return app.fonts.family(name) catch app.fonts.family("Inter") catch app.fonts.builtin();
+    }
+
+    /// A fonte da interface (ou a do código, `mono`) com que o quadro desenha: a escolhida
+    /// em Configurações → Aparência e, sem escolha ou se ela não abrir, a do tema.
+    pub fn textFamily(app: *App, th: *const theme_mod.Theme, mono: bool) *fonts_mod.Family {
+        const s = &app.st.settings;
+        const chosen = if (mono) s.font_mono.slice() else s.font_ui.slice();
+        if (chosen.len > 0) if (app.fonts.installedFamily(chosen)) |f| return f else |_| {};
+        return app.uiFamily(if (mono) th.font_mono else th.font_ui);
     }
 
     fn setTheme(app: *App, i: usize) void {
@@ -2094,14 +2110,18 @@ pub const App = struct {
             },
             .toggle_mute => {
                 st.muted = !st.muted;
+                st.settings.mute_me = st.muted;
                 if (st.voice != null) voz_audio.play(if (st.muted) .mute else .unmute);
                 if (st.voice != null) app.cmd(.{ .voice_flags = .{ .mute = st.muted, .deaf = st.deafened } });
+                app.saveSettings();
             },
             .toggle_deafen => {
                 st.deafened = !st.deafened;
                 if (st.deafened) st.muted = true;
+                st.settings.mute_me = st.muted;
                 if (st.voice != null) voz_audio.play(if (st.deafened) .deafen else .undeafen);
                 if (st.voice != null) app.cmd(.{ .voice_flags = .{ .mute = st.muted, .deaf = st.deafened } });
+                app.saveSettings();
             },
             .toggle_voice_mixer => st.voice_mixer = !st.voice_mixer,
             .start_call => |ch| app_chamada.start(app, ch),
@@ -2188,6 +2208,10 @@ pub const App = struct {
                 app.saveSettings();
             },
             .set_theme_color => |cc| app.setThemeColor(cc.slot, cc.rgba),
+            .apply_font => {
+                app.applyThemeStyle();
+                app.saveSettings();
+            },
             .reset_theme_colors => app.resetThemeColors(),
             .set_guild_color => |gc| {
                 guild_color.set(gc.guild, gc.rgb);
@@ -3329,8 +3353,8 @@ pub const App = struct {
                     .store = &app.store,
                     .st = &app.st,
                     .fonts = &app.fonts,
-                    .ui = app.uiFamily(th.font_ui),
-                    .mono = app.uiFamily(th.font_mono),
+                    .ui = app.textFamily(th, false),
+                    .mono = app.textFamily(th, true),
                     .dl = undefined,
                     .fg = undefined,
                     .io = app.io,
@@ -3681,8 +3705,8 @@ pub const App = struct {
                 .store = &app.store,
                 .st = &app.st,
                 .fonts = &app.fonts,
-                .ui = app.uiFamily(th.font_ui),
-                .mono = app.uiFamily(th.font_mono),
+                .ui = app.textFamily(th, false),
+                .mono = app.textFamily(th, true),
                 .dl = undefined,
                 .fg = undefined,
                 .io = app.io,

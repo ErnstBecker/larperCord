@@ -65,6 +65,10 @@ pub const Settings = struct {
     /// Traço e encaixe das letras nos pixels (ui/fonts.zig).
     text_weight: f32 = 1,
     text_hinting: u8 = 0,
+    /// Famílias escolhidas nas Configurações entre as instaladas no dispositivo
+    /// (vazia = a que o tema pede; a lista vem de ui/fonts.zig).
+    font_ui: Text = .{},
+    font_mono: Text = .{},
     /// Limites de memória, em Desempenho: imagens e cada GIF (MB), e mensagens somando os canais.
     image_cache_mb: f32 = 32,
     gif_limit_mb: f32 = 32,
@@ -210,6 +214,9 @@ pub const Settings = struct {
     voice_denoise: u8 = 1,
     /// Liga os avisos da call (o toque de chamada tem a escolha dele, abaixo).
     voice_sounds: bool = true,
+    /// Mudo da última vez: entrar numa call começa como estava ao sair da anterior
+    /// (o atalho, o botão e o menu do dispositivo gravam aqui ao trocar).
+    mute_me: bool = false,
     /// Cada som (core/sons.zig Event): a variante (Variant: 0 desligado,
     /// 1 clássico, 2..4 embutidos, 5 o arquivo da pessoa), o volume em %
     /// (0..200) e o arquivo copiado para <config>/larpercord/sons (só o nome).
@@ -524,6 +531,7 @@ test "limites de memória voltam do arquivo como estavam e o arquivo da 0.6.1 é
     s.image_cache_mb = 64;
     s.message_budget = 3000;
     s.font_scale = 1.2;
+    s.mute_me = true;
     var out: std.ArrayList(u8) = .empty;
     defer out.deinit(std.testing.allocator);
     try write(&s, "vidro", &out, std.testing.allocator);
@@ -534,6 +542,7 @@ test "limites de memória voltam do arquivo como estavam e o arquivo da 0.6.1 é
     try std.testing.expectEqual(@as(f32, 64), back.image_cache_mb);
     try std.testing.expectEqual(@as(f32, 3000), back.message_budget);
     try std.testing.expectApproxEqAbs(@as(f32, 1.2), back.font_scale, 0.001);
+    try std.testing.expectEqual(true, back.mute_me);
     // 0.6.1: o padrão antigo de cada GIF e os limites que o arredondamento estragou.
     const old = try kdl.parse(arena.allocator(), "settings gif_limit_mb=12.000 image_cache_mb=3.000 message_budget=3.000 font_scale=9\n", null);
     var fixed: Settings = .{};
