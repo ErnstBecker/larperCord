@@ -76,8 +76,10 @@ pub const ops = [_]Op{
     shift(c.ImGuiKey_RightArrow),
     shift(c.ImGuiKey_RightArrow),
     expect("seleção para a direita mostra a balança", balanca),
+    .{ .shot = "md-barra-balca" },
     click("composer-bold"),
     expect("B coloca ** nas pontas", boldRight),
+    .{ .shot = "md-barra-negrito" },
 } ++
     limpar ++
     [_]Op{
@@ -102,4 +104,10 @@ pub const ops = [_]Op{
     [_]Op{
         click("composer-italic"),
         expect("I coloca * nas pontas", italicLeft),
+    } ++
+    // O negrito e o itálico do CJK (a fonte reserva não tem nenhum dos dois).
+    limpar ++
+    [_]Op{
+        .{ .text = "あ **本** いと *日本語*" },
+        .{ .shot = "md-barra-japones" },
     };
