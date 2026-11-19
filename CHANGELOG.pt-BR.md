@@ -1,5 +1,10 @@
 # O que mudou em cada versão
 
+## 0.6.8
+
+**Texto em qualquer idioma**
+- O nome do mascote Terminal em Configurações → Mascote passa pela tradução, como o Clássico ao lado (#20).
+
 ## 0.6.7
 
 **Janela flutuante**

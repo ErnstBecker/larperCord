@@ -701,7 +701,7 @@ fn mascotPicker(p: *Page, value: *u8) void {
     const ch: f32 = 176;
     const light = ctx.col(.bg).luma() > 0.5;
     const reduce = ctx.st.settings.reduce_motion;
-    const names = [2][]const u8{ "Terminal", i18n.tr("Clássico", "Classic") };
+    const names = [2][]const u8{ i18n.tr("Terminal", "Terminal"), i18n.tr("Clássico", "Classic") };
     for (names, 0..) |name, i| {
         const r: d.Rect = .{ .x = p.x + @as(f32, @floatFromInt(i)) * (cw + gap), .y = p.y, .w = cw, .h = ch };
         const hb = d.hit(ctx, p.id(), r);

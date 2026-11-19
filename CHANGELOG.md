@@ -1,5 +1,10 @@
 # What changed in each version
 
+## 0.6.8
+
+**Text in any language**
+- The Terminal mascot's name in Settings → Mascot goes through the translation, like Classic next to it (#20).
+
 ## 0.6.7
 
 **Floating window**
