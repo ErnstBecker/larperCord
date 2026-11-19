@@ -152,6 +152,7 @@ const toggle_names = [_]struct { field: []const u8, pt: []const u8, en: []const 
     .{ .field = "show_embeds", .pt = "Mostrar imagens de links", .en = "Show images from links" },
     .{ .field = "show_spoilers", .pt = "Sempre mostrar spoilers", .en = "Always show spoilers" },
     .{ .field = "md_preview", .pt = "Prévia do markdown", .en = "Markdown preview" },
+    .{ .field = "md_bar", .pt = "Barra de formatação", .en = "Formatting bar" },
     .{ .field = "open_at_unread", .pt = "Abrir na primeira não lida", .en = "Open at the first unread" },
     .{ .field = "send_typing", .pt = "Enviar indicador de digitação", .en = "Send typing indicator" },
     .{ .field = "rich_presence", .pt = "Compartilhar minha atividade (Rich Presence)", .en = "Share my activity (Rich Presence)" },
