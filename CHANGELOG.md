@@ -1,15 +1,17 @@
 # What changed in each version
 
+## 0.6.7
+
+**Messages**
+- Select text in the message box and B and I appear above the selection, on the side where it ends: they put ** and * around the selected text, for bold and italic, and the markdown preview updates on the spot. Settings → Chat → "Formatting bar" turns it off.
+- Bold and italic now show in Japanese too. No Japanese font has either style, so the fallback font drew **negrito** regular and *itálico* upright; the letters that come from the fallback are now emboldened and slanted synthetically, only on the spans that ask for it.
+
 ## 0.6.6
 
 **Appearance**
 - Settings → Appearance picks the fonts for the interface and for code from the ones installed on your device: the list reads the font files themselves, with the family name from each file (Windows reads C:\Windows\Fonts and your own fonts folder; on other systems fontconfig answers). "Theme" goes back to what the theme asks for, and the choice is saved, from ryokky3 (#26). Japanese follows the new texts.
 
 ## 0.6.5
-
-**Messages**
-- Select text in the message box and B and I appear above the selection, on the side where it ends: they put ** and * around the selected text, for bold and italic, and the markdown preview updates on the spot. Settings → Chat → "Formatting bar" turns it off.
-- Bold and italic now show in Japanese too. No Japanese font has either style, so the fallback font drew **negrito** regular and *itálico* upright; the letters that come from the fallback are now emboldened and slanted synthetically, only on the spans that ask for it.
 
 **Mascot**
 - A new mascot, Terminal, with a ">_" wink, is now the main one, with an all-new opening: a terminal cursor blinks, a tube-TV line lights up and opens the body, the ears spring up, the face gets typed in, it shows "..." while connecting, and it switches off like an old TV as the app opens. The demo plays the whole opening too.

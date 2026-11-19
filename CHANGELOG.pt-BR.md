@@ -1,15 +1,17 @@
 # O que mudou em cada versão
 
+## 0.6.7
+
+**Mensagens**
+- Selecionar texto na caixa de mensagem mostra B e I em cima do trecho, do lado onde ele termina: eles colocam ** e * ao redor do selecionado, para negrito e itálico, e a prévia do markdown atualiza na hora. Configurações → Chat → "Barra de formatação" desliga.
+- Negrito e itálico agora aparecem em japonês também. Nenhuma fonte japonesa tem os dois, então a fonte reserva desenhava **negrito** normal e *itálico* em pé; as letras que vêm dela agora são embotadas e inclinadas de mentira, só nos trechos que pedem.
+
 ## 0.6.6
 
 **Aparência**
 - Configurações → Aparência escolhe as fontes da interface e do código entre as instaladas no dispositivo: a lista lê os arquivos de fonte, com o nome da família de cada arquivo (o Windows lê C:\Windows\Fonts e a sua pasta de fontes; nos outros sistemas, o fontconfig responde). "Do tema" volta ao que o tema pede, e a escolha fica salva, do ryokky3 (#26). O japonês segue os textos novos.
 
 ## 0.6.5
-
-**Mensagens**
-- Selecionar texto na caixa de mensagem mostra B e I em cima do trecho, do lado onde ele termina: eles colocam ** e * ao redor do selecionado, para negrito e itálico, e a prévia do markdown atualiza na hora. Configurações → Chat → "Barra de formatação" desliga.
-- Negrito e itálico agora aparecem em japonês também. Nenhuma fonte japonesa tem os dois, então a fonte reserva desenhava **negrito** normal e *itálico* em pé; as letras que vêm dela agora são embotadas e inclinadas de mentira, só nos trechos que pedem.
 
 **Mascote**
 - Um mascote novo, o Terminal, com a piscadinha ">_", agora é o principal, com uma abertura toda nova: um cursor de terminal pisca, uma linha de TV de tubo acende e abre o corpo, as orelhas saltam, o rosto é digitado, ele mostra "..." enquanto conecta e desliga como uma TV antiga quando o app abre. O demo também mostra a abertura inteira.
