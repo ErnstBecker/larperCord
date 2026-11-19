@@ -237,7 +237,7 @@ const Extra = struct { data: []u8, index: c_int, blocks: [extra_blocks_per_file]
 /// Tetos das outras escritas. Cada fonte entra em cada face do atlas (uma face do FreeType por
 /// face), e uma conversa com escritas demais não abre fonte sem fim: o que passar disso fica
 /// como letra sem fonte. Até 31 blocos separados cabem nas faixas do ImGui (font_blocks.exclude).
-const extra_files = 8;
+const extra_files = 12;
 const extra_blocks = 24;
 const extra_blocks_per_file = 16;
 /// Blocos procurados por vez: com mais, o resto fica para o próximo intervalo entre quadros.
