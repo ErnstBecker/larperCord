@@ -951,6 +951,12 @@ fn profileNoteSaved(app: *App) bool {
 fn movedToGaming(app: *App) bool {
     return app.store.voiceChannelOf(1001, app.st.guild) == ch(14);
 }
+fn backToMadrugada(app: *App) bool {
+    return app.store.voiceChannelOf(1001, app.st.guild) == ch(13) and @import("ui/arrastar_voz.zig").arraste == null;
+}
+fn noProfile(app: *App) bool {
+    return app.st.popup != .profile;
+}
 fn disconnected1001(app: *App) bool {
     const cur = app.store.voiceChannelOf(1001, app.st.guild);
     return cur == 0 or app.store.channel(cur).?.info.guild != app.st.guild;
@@ -2314,6 +2320,13 @@ const ops = [_]Op{
     click("menu:Mover para…"),
     click("menu:Jogando"),
     expect("botão direito → Mover para… muda a pessoa de call", movedToGaming),
+    // Arrastar (ui/arrastar_voz.zig): soltar fora de um canal não muda nada; soltar no canal
+    // de voz move, com o mesmo pedido do menu.
+    .{ .drag = .{ .from = .{ .mark = "voice-member:500015:1001" }, .to = .{ .mark = "composer" } } },
+    expect("arrastar e soltar fora de um canal de voz não move ninguém", movedToGaming),
+    .{ .drag = .{ .from = .{ .mark = "voice-member:500015:1001" }, .to = .{ .mark = "channel:500014" } } },
+    expect("arrastar a pessoa até outro canal de voz move ela para lá", backToMadrugada),
+    expect("e não abre o perfil de ninguém", noProfile),
     .{ .rclick = .{ .mark = "member:1001" } },
     click("menu:Desconectar da call"),
     expect("Desconectar da call tira a pessoa da call", disconnected1001),
