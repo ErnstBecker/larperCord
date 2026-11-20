@@ -223,6 +223,57 @@ pub fn tcpSend(s: Socket, data: []const u8) void {
     if (windows) _ = c.send(s, data.ptr, @intCast(data.len), 0) else _ = c.send(s, data.ptr, data.len, 0);
 }
 
+/// Manda tudo (o send pode levar só uma parte). Falso: o outro lado fechou ou parou
+/// de ler (ver `setSendTimeout`).
+pub fn tcpSendAll(s: Socket, data: []const u8) bool {
+    var rest = data;
+    while (rest.len > 0) {
+        const n = if (windows) c.send(s, rest.ptr, @intCast(@min(rest.len, 1 << 30)), 0) else c.send(s, rest.ptr, rest.len, 0);
+        if (n <= 0) {
+            if (!windows and n < 0 and std.c._errno().* == @backingInt(std.c.E.INTR)) continue;
+            return false;
+        }
+        rest = rest[@intCast(n)..];
+    }
+    return true;
+}
+
+/// Lê o que já chegou (bloqueia se não chegou nada: quem chama já fez o poll).
+/// 0: o outro lado fechou; negativo: erro.
+pub fn tcpRecvSome(s: Socket, buf: []u8) isize {
+    if (windows) return c.recv(s, buf.ptr, @intCast(@min(buf.len, 1 << 30)), 0);
+    while (true) {
+        const n = c.recv(s, buf.ptr, buf.len, 0);
+        if (n < 0 and std.c._errno().* == @backingInt(std.c.E.INTR)) continue;
+        return n;
+    }
+}
+
+/// Um envio parado (o outro lado não lê) desiste depois de `ms`.
+pub fn setSendTimeout(s: Socket, ms: u32) void {
+    if (windows) {
+        const v: c.DWORD = ms;
+        _ = c.setsockopt(s, c.SOL_SOCKET, c.SO_SNDTIMEO, @ptrCast(&v), @sizeOf(c.DWORD));
+    } else {
+        const tv: c.struct_timeval = .{ .tv_sec = @intCast(ms / 1000), .tv_usec = @intCast((ms % 1000) * 1000) };
+        _ = c.setsockopt(s, c.SOL_SOCKET, c.SO_SNDTIMEO, &tv, @sizeOf(c.struct_timeval));
+    }
+}
+
+/// O socket aceito também não vai para os processos que o app abrir (como o de
+/// `tcpListenLocal`).
+pub fn noInherit(s: Socket) void {
+    if (windows) {
+        _ = c.SetHandleInformation(@ptrFromInt(s), c.HANDLE_FLAG_INHERIT, 0);
+    } else _ = c.fcntl(s, c.F_SETFD, @as(c_int, c.FD_CLOEXEC));
+}
+
+/// Fecha os dois sentidos sem soltar o socket: quem está parado num send ou recv
+/// dele volta na hora (SHUT_RDWR e SD_BOTH valem 2).
+pub fn shutdownSocket(s: Socket) void {
+    _ = c.shutdown(s, 2);
+}
+
 /// Espera chegar algo por até `timeout_ms` e lê uma vez.
 pub fn tcpRecv(s: Socket, buf: []u8, timeout_ms: c_int) []u8 {
     var fds = [1]PollFd{.{ .fd = s, .events = c.POLLIN, .revents = 0 }};

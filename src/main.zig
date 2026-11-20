@@ -46,6 +46,7 @@ const usage =
     \\  --ws-check [URL]  abre o WebSocket do gateway sem conta e mostra o primeiro quadro (HELLO)
     \\  --restarted       toma o lugar do larperCord que está fechando (usado ao reiniciar)
     \\  --version         mostra a versão e sai
+    \\  ctl COMANDO       controla o larperCord aberto (larpercord ctl help)
     \\
     \\atalhos: Ctrl+K paleta · Ctrl+, configurações · F2 próximo tema
     \\         Ctrl+Tab abas · Alt+1..9 · Ctrl+W fecha aba
@@ -80,7 +81,18 @@ pub fn main(init: std.process.Init.Minimal) !void {
     var it = if (sys.windows) try std.process.Args.Iterator.initAllocator(init.args, std.heap.c_allocator) else std.process.Args.Iterator.init(init.args);
     _ = it.skip();
     while (it.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--theme")) {
+        if (std.mem.eql(u8, arg, "ctl")) {
+            // `larpercord ctl …`: fala com o larperCord aberto e sai (ctl_cli.zig), sem SDL
+            // nem janela.
+            var rest: [64][]const u8 = undefined;
+            var n: usize = 0;
+            while (it.next()) |a| {
+                if (n == rest.len) return fail("ctl: argumentos demais");
+                rest[n] = a;
+                n += 1;
+            }
+            std.process.exit(@import("ctl_cli.zig").main(rest[0..n]));
+        } else if (std.mem.eql(u8, arg, "--theme")) {
             opts.theme = it.next() orelse return fail("--theme precisa de um nome");
         } else if (std.mem.eql(u8, arg, "--shot")) {
             opts.shot = (it.next() orelse return fail("--shot precisa de um arquivo")).ptr;
@@ -176,6 +188,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
         },
     };
 
+    // O controle de fora (app_ctl.zig): no app de verdade, com a opção ligada; na
+    // demonstração, no QA e nos prints, só com LARPER_CTL, num arquivo da porta que não
+    // pisa no de um larperCord aberto.
+    opts.ctl = if (single) .app else if (c.SDL_getenv("LARPER_CTL") != null) .demo else .off;
+
     if (opts.stats) timeline.begin();
     const app = try App.create(std.heap.c_allocator, opts);
     instance.listen(app.win.wake_type);
@@ -197,14 +214,10 @@ pub fn main(init: std.process.Init.Minimal) !void {
 }
 
 /// Na saída padrão, como em todo programa: quem empacota ou confere uma instalação lê com
-/// $(larpercord --version). No Windows o app não tem console, então a linha só aparece com
-/// a saída redirecionada (o GetStdHandle vem nulo e a escrita não faz nada).
+/// $(larpercord --version). No Windows o app não tem console: a linha vai para onde a
+/// saída foi redirecionada ou, sem isso, para o terminal que chamou (ctl_cli.zig).
 fn printVersion() void {
-    const line = "larperCord " ++ @import("build_options").version ++ "\n";
-    if (sys.windows) {
-        var n: c.DWORD = 0;
-        _ = c.WriteFile(c.GetStdHandle(c.STD_OUTPUT_HANDLE), line.ptr, line.len, &n, null);
-    } else _ = c.write(1, line.ptr, line.len);
+    _ = @import("ctl_cli.zig").write(.out, "larperCord " ++ @import("build_options").version ++ "\n");
 }
 
 /// O curl do app contra um endereço qualquer, sem conta nenhuma: confere os certificados
