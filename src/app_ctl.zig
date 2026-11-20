@@ -497,7 +497,7 @@ const insp_cmd = @import("inspect/comandos.zig");
 
 /// Um pedido do Inspetor esperando um quadro (achar, clicar, a árvore) ou o print.
 const Held = struct { req: *ctl.Request, since_ms: u64, shot: bool };
-var held: std.ArrayList(Held) = .empty;
+var guardados: std.ArrayList(Held) = .empty;
 
 /// O que vem depois de "inspect " na linha, ou nulo se não é um `inspect`.
 fn inspectLine(line: []const u8) ?[]const u8 {
@@ -516,12 +516,12 @@ fn inspect(app: *App, _: *const proto.Args, out: *Out) Error!void {
             // O print sai no fim do próximo quadro: a resposta espera o arquivo.
             if (std.mem.startsWith(u8, line, "shot ") and insp_cmd.busy()) {
                 out.hold = true;
-                try held.append(alloc, .{ .req = out.req, .since_ms = c.SDL_GetTicks(), .shot = true });
+                try guardados.append(alloc, .{ .req = out.req, .since_ms = c.SDL_GetTicks(), .shot = true });
             }
         },
         .depois => {
             out.hold = true;
-            try held.append(alloc, .{ .req = out.req, .since_ms = c.SDL_GetTicks(), .shot = false });
+            try guardados.append(alloc, .{ .req = out.req, .since_ms = c.SDL_GetTicks(), .shot = false });
         },
     }
 }
@@ -538,11 +538,11 @@ fn runInspect(app: *App, line: []const u8, req: *ctl.Request) Error!insp_cmd.Fim
 /// Os pedidos guardados do Inspetor: depois de um quadro (`after_frame`), roda de novo os que
 /// esperavam um; e responde com erro os que passaram do prazo (janela escondida: sem quadro).
 pub fn inspectPump(app: *App, after_frame: bool) void {
-    if (held.items.len == 0) return;
+    if (guardados.items.len == 0) return;
     const now = c.SDL_GetTicks();
     var i: usize = 0;
-    while (i < held.items.len) {
-        const h = held.items[i];
+    while (i < guardados.items.len) {
+        const h = guardados.items[i];
         var done = false;
         if (now - h.since_ms > ctl.reply_ms - 300) {
             h.req.err = .{ .code = .timeout, .text = "no frame was drawn in time (is the window hidden?)" };
@@ -563,12 +563,12 @@ pub fn inspectPump(app: *App, after_frame: bool) void {
         }
         if (done) {
             ctl.finish(h.req);
-            _ = held.swapRemove(i);
+            _ = guardados.swapRemove(i);
         } else i += 1;
     }
 }
 
 /// Tem pedido do Inspetor esperando: o laço desenha quadros até ele sair.
 pub fn inspectWaiting() bool {
-    return held.items.len > 0;
+    return guardados.items.len > 0;
 }
