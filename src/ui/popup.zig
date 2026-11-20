@@ -249,7 +249,7 @@ var delete_label: []const u8 = "";
 
 /// Canal de voz em que a pessoa está, se dá para movê-la de lá (é do
 /// servidor aberto e temos "Mover membros").
-fn movable(ctx: *d.Ctx, uid: Id) ?*const @import("../core/store.zig").ChannelState {
+pub fn movable(ctx: *d.Ctx, uid: Id) ?*const @import("../core/store.zig").ChannelState {
     const ch = ctx.store.voiceChannelOf(uid, ctx.st.guild);
     if (ch == 0) return null;
     const cs = ctx.store.channel(ch) orelse return null;
