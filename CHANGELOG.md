@@ -27,6 +27,7 @@
 
 **Connection**
 - Signing in and every reconnect no longer wait up to a second before sending IDENTIFY or RESUME. When Discord's first message came in together with the answer to the connection, the app only noticed it a second later.
+- A token Discord refuses (4004) after the connection had dropped a few times in a row now shows why on the sign-in screen, instead of "the connection keeps dropping; retrying more slowly", which also wasn't true: nothing retries after that.
 
 ## 0.6.7
 

@@ -308,7 +308,9 @@ pub const Gateway = struct {
             const lived: ?i64 = if (g.ws_ready) nowMs() - g.ws_ready_ms else null;
             g.ws_ready = false;
             retry.sessionEnded(lived);
-            if (retry.justStartedFlapping() and lived != null) g.notice("a conexão está caindo logo depois de conectar; vou tentar com mais calma", "the connection keeps dropping right after connecting; retrying more slowly", .{});
+            // Recusa de vez (4004, 4010-4014): não há tentativa nenhuma depois, e o aviso de
+            // "vou tentar com mais calma" tomaria o lugar do motivo na tela de entrada.
+            if (retry.justStartedFlapping() and lived != null and result != .fatal) g.notice("a conexão está caindo logo depois de conectar; vou tentar com mais calma", "the connection keeps dropping right after connecting; retrying more slowly", .{});
             switch (result) {
                 .fatal => {
                     g.emit(.{ .status = .failed });

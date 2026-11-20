@@ -27,6 +27,7 @@
 
 **Conexão**
 - Entrar e cada reconexão não esperam mais até um segundo antes de mandar o IDENTIFY ou o RESUME. Quando a primeira mensagem do Discord chegava junto com a resposta da conexão, o app só a via um segundo depois.
+- Um token que o Discord recusa (4004) depois de a conexão cair algumas vezes seguidas agora mostra o motivo na tela de entrada, e não "a conexão está caindo; vou tentar com mais calma", que nem era verdade: depois disso nada tenta de novo.
 
 ## 0.6.7
 
