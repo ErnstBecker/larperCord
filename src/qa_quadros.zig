@@ -38,6 +38,15 @@ fn framesSettled(app: *App) bool {
     return false;
 }
 
+var gifs_before = true;
+fn gifsOff(app: *App) void {
+    gifs_before = app.st.settings.autoplay_gifs;
+    app.st.settings.autoplay_gifs = false;
+}
+fn gifsOn(app: *App) void {
+    app.st.settings.autoplay_gifs = gifs_before;
+}
+
 fn framesChanged(app: *App) bool {
     return (app.gate.built - built_mark) > (app.gate.same - same_mark);
 }
@@ -141,6 +150,10 @@ fn resetLimits(app: *App) void {
 
 pub const ops = [_]Op{
     s("quadro igual não precisa ir para a tela"),
+    // O GIF da demonstração na lista (atrás das Configurações) troca de quadro a cada
+    // ~90 ms com a janela em foco: com ele tocando, dez quadros iguais seguidos só
+    // cabem se o app desenhar rápido o bastante. Parado aqui quer dizer sem GIF tocando.
+    .{ .run = gifsOff },
     .{ .key = .{ .key = c.ImGuiKey_Comma, .ctrl = true } },
     .{ .wait = 300 },
     click("settings:Sobre"),
@@ -152,6 +165,7 @@ pub const ops = [_]Op{
     .{ .expect = .{ .name = "o destaque do mouse muda o quadro", .check = framesChanged, .timeout_ms = 2000 } },
     .{ .run = markFrames },
     .{ .expect = .{ .name = "o mouse parou, volta a sair igual", .check = framesSettled, .timeout_ms = 15000 } },
+    .{ .run = gifsOn },
 
     s("página de desempenho mostra a memória por partes"),
     click("settings:Desempenho"),
