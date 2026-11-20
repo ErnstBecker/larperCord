@@ -305,7 +305,9 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
     if (eq(u8, cmd, "find") or eq(u8, cmd, "tree") or eq(u8, cmd, "el") or eq(u8, cmd, "click") or eq(u8, cmd, "rclick") or eq(u8, cmd, "dclick") or eq(u8, cmd, "hover")) {
         // Precisa do quadro gravado: com o Inspetor fechado (ou noutra aba), pede alguns.
         const f = frameFresh() orelse {
-            ui.quadros_pedidos = @max(ui.quadros_pedidos, 3);
+            // Pede os quadros uma vez só: pedir de novo a cada tentativa nunca deixava a conta
+            // chegar ao quadro gravado (o Inspetor fechado, pelo ctl).
+            if (ui.quadros_pedidos == 0) ui.quadros_pedidos = 3;
             return .depois;
         };
         if (eq(u8, cmd, "find")) return find(f, rest, w);

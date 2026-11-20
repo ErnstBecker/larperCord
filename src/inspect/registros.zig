@@ -745,7 +745,9 @@ pub fn evento(kind: EvKind, value: anytype) void {
     evs.add(kind, tag, w.buffered());
 }
 
-fn curto(w: *std.Io.Writer, v: anytype, depth: u8) void {
+/// Profundidade em tempo de compilação: os tipos lá do fundo (o READY inteiro, por exemplo)
+/// nem chegam a gerar código, e o binário não cresce com cada struct do app.
+fn curto(w: *std.Io.Writer, v: anytype, comptime depth: u8) void {
     const T = @TypeOf(v);
     switch (@typeInfo(T)) {
         .void => {},
@@ -764,11 +766,6 @@ fn curto(w: *std.Io.Writer, v: anytype, depth: u8) void {
                 w.writeByte('"') catch {};
             } else {
                 w.print("[{d}]", .{v.len}) catch {};
-                if (depth < 2 and v.len > 0) {
-                    w.writeAll(" ") catch {};
-                    curto(w, v[0], depth + 1);
-                    if (v.len > 1) w.writeAll(" …") catch {};
-                }
             },
             .one => switch (@typeInfo(p.child)) {
                 .@"opaque", .@"fn" => w.writeAll("ptr") catch {},
@@ -781,7 +778,7 @@ fn curto(w: *std.Io.Writer, v: anytype, depth: u8) void {
             w.print("\"{s}\"", .{s[0..@min(s.len, 160)]}) catch {};
         } else w.print("[{d}]", .{a.len}) catch {},
         .@"struct" => |s| {
-            if (depth >= 3) {
+            if (depth >= 2) {
                 w.writeAll("{…}") catch {};
                 return;
             }
@@ -800,7 +797,7 @@ fn curto(w: *std.Io.Writer, v: anytype, depth: u8) void {
             }
             const tag = std.meta.activeTag(v);
             w.writeAll(@tagName(tag)) catch {};
-            if (depth >= 3) return;
+            if (depth >= 2) return;
             inline for (u.field_names, u.field_types) |name, ty| {
                 if (ty != void and tag == @field(std.meta.Tag(T), name)) {
                     w.writeAll("(") catch {};
@@ -856,7 +853,7 @@ test "evento curto: etiqueta, campos, textos entre aspas e listas resumidas" {
     evento(.action, U{ .send = .{ .channel = 7, .text = "oi", .files = &.{ "a", "b" } } });
     const e = evs.slot(evs.next - 1);
     try t.expectEqualStrings("send", e.tag);
-    try t.expectEqualStrings("{channel=7, text=\"oi\", files=[2] \"a\" …}", e.text);
+    try t.expectEqualStrings("{channel=7, text=\"oi\", files=[2]}", e.text);
     evento(.action, U.quit);
     try t.expectEqualStrings("quit", evs.slot(evs.next - 1).tag);
 }

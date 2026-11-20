@@ -450,7 +450,7 @@ pub fn tokenName(th: *const theme_mod.Theme, color: u32) []const u8 {
         }
     }
     // Não é cor do tema, mas é quase (uma mistura, um tom acima): o nome da mais perto.
-    if (near_d <= 40) return std.fmt.bufPrint(&S.buf, "≈ {s}", .{near}) catch near;
+    if (near_d <= 30) return std.fmt.bufPrint(&S.buf, "≈ {s}", .{near}) catch near;
     return "";
 }
 

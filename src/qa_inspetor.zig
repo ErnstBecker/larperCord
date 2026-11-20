@@ -145,19 +145,27 @@ fn shotPicked(app: *App) void {
 }
 
 /// Um texto escolhido: a cor tem o nome no tema e o contraste com o fundo é calculado.
+/// A cor do corpo de uma mensagem: a `text` do tema ou um tom perto dela (o horário é
+/// `muted`, um cinza que de propósito fica abaixo do AA).
+fn bodyColor(tok: []const u8) bool {
+    return std.mem.eql(u8, tok, "text") or std.mem.eql(u8, tok, "≈ text");
+}
+
 fn selectText(app: *App) void {
     const f = cap.last() orelse return;
-    // O texto de uma mensagem (a cor dele, no classico, é um tom perto da `text` do tema).
+    // A linha mais longa do corpo de uma mensagem (o selo "NOVAS MENSAGENS" também é claro,
+    // mas é branco no vermelho).
+    var best: ?usize = null;
     for (f.els.items, 0..) |e, i| {
         const sc = f.scopeOf(&e) orelse continue;
-        if (e.kind == .text and std.mem.eql(u8, sc.name, "messages") and cap.visible(&e) and
-            std.mem.indexOfScalar(u8, f.str(e.str), ' ') != null and @import("inspect/aba_elementos.zig").tokenName(app.themes.theme_(), e.color).len > 0)
-        {
-            ui.select(f, i);
-            return;
-        }
+        if (e.kind != .text or !std.mem.eql(u8, sc.name, "messages") or !cap.visible(&e)) continue;
+        if (std.mem.indexOfScalar(u8, f.str(e.str), ' ') == null) continue;
+        if (!bodyColor(@import("inspect/aba_elementos.zig").tokenName(app.themes.theme_(), e.color))) continue;
+        if (best == null or f.str(e.str).len > f.str(f.els.items[best.?].str).len) best = i;
     }
+    if (best) |i| ui.select(f, i);
 }
+
 fn textHasTokenAndContrast(app: *App) bool {
     const f = cap.last() orelse return false;
     const i = ui.sel.index orelse return false;
@@ -168,7 +176,7 @@ fn textHasTokenAndContrast(app: *App) bool {
     const ratio = @import("inspect/kit.zig").fromU32(e.color).contrast(@import("inspect/kit.zig").fromU32(bg));
     // O classico escuro: texto claro no fundo escuro passa folgado do AA, e os pedaços da
     // linha viraram um texto só (com espaço).
-    return tok.len > 0 and ratio > 4.5 and std.mem.indexOfScalar(u8, f.str(e.str), ' ') != null;
+    return bodyColor(tok) and ratio > 4.5 and std.mem.indexOfScalar(u8, f.str(e.str), ' ') != null;
 }
 
 // --- Comandos ------------------------------------------------------------------------
