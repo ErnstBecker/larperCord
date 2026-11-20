@@ -37,7 +37,7 @@ is handled between the app's events, without drawing anything.
 | `watch` | Keeps running and prints one line each time the status, the unread counts or the call change |
 | `watch --waybar` | The same, as JSON for a waybar custom module |
 | `watch --format text` | The same, as a plain line (polybar and others) |
-| `mentions [n]` | The unread DMs and mentions (what the Inbox shows), newest first, as JSON: who, where, the start of the message and a `link` for `open` |
+| `mentions [n]` | The unread DMs and mentions (what the Inbox shows), newest first, as JSON: who, where, the start of the message and a `link` for `open`. A conversation you haven't opened yet comes as one line with an empty `text` and `count` new messages |
 | `channels` | Servers, text and voice channels and DMs with their unread counts, as JSON, for a launcher (`open <id>` opens one) |
 | `presence <online\|idle\|dnd\|invisible>` | Changes your status |
 | `volume <id> <0-200>` | Someone's volume in the call, in percent, like the mixer |

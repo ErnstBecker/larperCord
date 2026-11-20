@@ -38,7 +38,7 @@ meio dos eventos do app, sem desenhar nada.
 | `watch` | Fica rodando e escreve uma linha cada vez que o status, as não lidas ou a call mudam |
 | `watch --waybar` | O mesmo, em JSON para um módulo custom do waybar |
 | `watch --format text` | O mesmo, numa linha de texto (polybar e outros) |
-| `mentions [n]` | As DMs não lidas e as menções (o que a Caixa de entrada mostra), da mais nova para a mais velha, em JSON: quem, onde, o começo da mensagem e um `link` para o `open` |
+| `mentions [n]` | As DMs não lidas e as menções (o que a Caixa de entrada mostra), da mais nova para a mais velha, em JSON: quem, onde, o começo da mensagem e um `link` para o `open`. Uma conversa que você ainda não abriu vem numa linha só, com o `text` vazio e `count` mensagens novas |
 | `channels` | Servidores, canais de texto e de voz e DMs com as não lidas, em JSON, para um lançador (`open <id>` abre) |
 | `presence <online\|idle\|dnd\|invisible>` | Troca o seu status |
 | `volume <id> <0-200>` | O volume de alguém na call, em porcentagem, como o mixer |

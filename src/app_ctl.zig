@@ -263,6 +263,9 @@ fn speakingKey(app: *App) u64 {
         h.update(std.mem.asBytes(&on));
         const f = app.store.voiceFlags(uid);
         h.update(std.mem.asBytes(&f));
+        // O volume de cada um também: a barra que mexeu no volume vê o valor novo.
+        const v = app.st.volumes.volume(uid);
+        h.update(std.mem.asBytes(&v));
     }
     return h.final();
 }
@@ -408,7 +411,9 @@ fn callMembers(app: *App, ch: Id, guild: Id) []const proto.Member {
 fn avatarUrl(app: *App, buf: []u8, guild: Id, uid: Id) []const u8 {
     const server = if (app.store.face(guild, uid)) |f| f.avatar else null;
     const hash = server orelse (if (app.store.user(uid)) |u| u.avatar else null) orelse return "";
-    return @import("ui/widgets.zig").cdnUrl(buf, .avatar, uid, hash);
+    const url = @import("ui/widgets.zig").cdnUrl(buf, .avatar, uid, hash);
+    // A demonstração usa fotos internas ("demo:…"): de fora, só um endereço de verdade.
+    return if (std.mem.startsWith(u8, url, "https://")) url else "";
 }
 
 // --- Comandos ----------------------------------------------------------------------------
@@ -557,6 +562,7 @@ fn help(_: *App, _: *const proto.Args, out: *Out) Error!void {
 }
 
 const inbox = @import("core/inbox.zig");
+const StoredMessage = @import("core/store.zig").StoredMessage;
 const jsonx = @import("net/jsonx.zig");
 
 /// As DMs não lidas e as menções (o que a Caixa de entrada mostra), da mais nova para a
@@ -565,10 +571,19 @@ fn mentions(app: *App, args: *const proto.Args, out: *Out) Error!void {
     const want: usize = if (args.len > 1) std.fmt.parseInt(usize, args.list[1], 10) catch return out.fail(.usage, "mentions [n]") else 20;
     var model: inbox.Model = .{};
     inbox.build(&app.store, &app.st.muted_channels, &app.st.filtros, &model);
-    const Item = struct { channel: Id, guild: Id, id: Id };
+    // Uma linha por mensagem carregada; a conversa não lida que ainda não foi aberta (sem
+    // mensagens na memória) vira uma linha só, sem texto, com quantas são.
+    const Item = struct { channel: Id, guild: Id, id: Id, count: u32, loaded: bool };
     var items: std.ArrayList(Item) = .empty;
     defer items.deinit(alloc);
-    for (model.slice()) |g| for (g.ids()) |id| try items.append(alloc, .{ .channel = g.channel, .guild = g.guild, .id = id });
+    for (model.slice()) |g| {
+        if (g.channel == 0) continue;
+        if (g.n == 0) {
+            if (g.latest != 0) try items.append(alloc, .{ .channel = g.channel, .guild = g.guild, .id = g.latest, .count = @max(g.total, 1), .loaded = false });
+            continue;
+        }
+        for (g.ids()) |id| try items.append(alloc, .{ .channel = g.channel, .guild = g.guild, .id = id, .count = 1, .loaded = true });
+    }
     std.mem.sortUnstable(Item, items.items, {}, struct {
         fn gt(_: void, a: Item, b: Item) bool {
             return a.id > b.id;
@@ -576,26 +591,24 @@ fn mentions(app: *App, args: *const proto.Args, out: *Out) Error!void {
     }.gt);
     const l = out.list();
     try l.append(alloc, '[');
-    var n: usize = 0;
-    for (items.items) |it| {
-        if (n == want) break;
-        const found = inbox.lookup(&app.store, it.channel, it.id) orelse continue;
-        const m = found.m;
+    for (items.items[0..@min(items.items.len, want)], 0..) |it, n| {
+        const m: ?*const StoredMessage = if (it.loaded) (if (inbox.lookup(&app.store, it.channel, it.id)) |f| f.m else null) else null;
+        // Sem a mensagem, quem escreveu é a outra pessoa da DM (num servidor, ninguém).
+        const author: Id = if (m) |x| x.msg.author else if (app.store.channel(it.channel)) |cs| cs.info.recipient else 0;
         if (n > 0) try l.append(alloc, ',');
-        n += 1;
         var pb: [400]u8 = undefined;
         var ab: [160]u8 = undefined;
         try l.print(alloc, "{{\"kind\":\"{s}\",\"id\":\"{d}\",\"channel_id\":\"{d}\",\"channel\":", .{ if (it.guild == 0) "dm" else "mention", it.id, it.channel });
         try jsonx.writeString(l, alloc, channelName(app, it.channel));
         try l.appendSlice(alloc, ",\"guild\":");
         if (app.store.guild(it.guild)) |g| try jsonx.writeString(l, alloc, g.name) else try l.appendSlice(alloc, "null");
-        try l.print(alloc, ",\"author_id\":\"{d}\",\"author\":", .{m.msg.author});
-        try jsonx.writeString(l, alloc, app.store.nameIn(it.guild, m.msg.author) orelse if (app.store.user(m.msg.author)) |u| u.name else "?");
+        try l.print(alloc, ",\"author_id\":\"{d}\",\"author\":", .{author});
+        try jsonx.writeString(l, alloc, if (author == 0) "" else app.store.nameIn(it.guild, author) orelse if (app.store.user(author)) |u| u.name else "?");
         try l.appendSlice(alloc, ",\"avatar\":");
-        try jsonx.writeString(l, alloc, avatarUrl(app, &ab, it.guild, m.msg.author));
+        try jsonx.writeString(l, alloc, if (author == 0) "" else avatarUrl(app, &ab, it.guild, author));
         try l.appendSlice(alloc, ",\"text\":");
-        try jsonx.writeString(l, alloc, inbox.preview(&pb, &app.store, m));
-        try l.print(alloc, ",\"time_ms\":{d},\"link\":\"https://discord.com/channels/", .{types.snowflakeTime(it.id)});
+        try jsonx.writeString(l, alloc, if (m) |x| inbox.preview(&pb, &app.store, x) else "");
+        try l.print(alloc, ",\"count\":{d},\"time_ms\":{d},\"link\":\"https://discord.com/channels/", .{ it.count, types.snowflakeTime(it.id) });
         if (it.guild == 0) try l.appendSlice(alloc, "@me") else try l.print(alloc, "{d}", .{it.guild});
         try l.print(alloc, "/{d}/{d}\"}}", .{ it.channel, it.id });
     }
