@@ -22,7 +22,7 @@ const Combinacao = comb.Combinacao;
 pub const Grupo = enum { geral, janela, abas, voz, caixa, vim };
 
 /// Os atalhos que dá para trocar.
-pub const Acao = enum { paleta, paleta_acoes, buscar, configuracoes, caixa_entrada, salvas, proximo_tema, tema_anterior, tela_cheia, proxima_aba, aba_anterior, fechar_aba, proximo_conjunto, mutar, ensurdecer, reiniciar, gravar_audio };
+pub const Acao = enum { paleta, paleta_acoes, buscar, configuracoes, caixa_entrada, salvas, proximo_tema, tema_anterior, tela_cheia, proxima_aba, aba_anterior, fechar_aba, proximo_conjunto, mutar, ensurdecer, reiniciar, gravar_audio, inspetor, inspetor_selecionar };
 const n_acoes = @typeInfo(Acao).@"enum".field_names.len;
 
 pub const Atalho = struct {
@@ -63,6 +63,8 @@ pub const lista = [_]Atalho{
     .{ .grupo = .janela, .pt = "Interface no tamanho normal", .en = "Interface at normal size", .teclas = "Ctrl 0" },
     .{ .grupo = .janela, .pt = "Tela cheia", .en = "Fullscreen", .teclas = "F11 / Alt+Enter", .acao = .tela_cheia },
     .{ .grupo = .janela, .pt = "Reiniciar o larperCord", .en = "Restart larperCord", .teclas = "Ctrl+R", .acao = .reiniciar },
+    .{ .grupo = .janela, .pt = "Inspetor (ferramentas de desenvolvedor)", .en = "Inspector (developer tools)", .teclas = "F12 / Ctrl+Shift+I", .acao = .inspetor },
+    .{ .grupo = .janela, .pt = "Selecionar um elemento para inspecionar", .en = "Select an element to inspect", .teclas = "Ctrl+Shift+E", .acao = .inspetor_selecionar },
     .{ .grupo = .abas, .pt = "Próxima aba", .en = "Next tab", .teclas = "Ctrl+Tab", .acao = .proxima_aba },
     .{ .grupo = .abas, .pt = "Aba anterior", .en = "Previous tab", .teclas = "Ctrl+Shift+Tab", .acao = .aba_anterior },
     .{ .grupo = .abas, .pt = "Ir para a aba N", .en = "Go to tab N", .teclas = "Alt+1…9" },

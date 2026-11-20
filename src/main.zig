@@ -40,6 +40,7 @@ const usage =
     \\  --lang IDIOMA     pt, en, ja ou ru (ignora as configurações)
     \\  --no-live         desliga as mensagens automáticas do modo demonstração
     \\  --stats           mostra a linha do tempo da abertura e o custo de cada quadro
+    \\  --inspect         abre com o Inspetor (F12) aberto e gravando desde o começo
     \\  --voice-test G C  entra no canal de voz C do servidor G por 25 s
     \\  --tls-check URL   confere se a rede do app funciona neste sistema (certificados e WebSocket)
     \\  --tls-fingerprint mostra a impressão TLS e HTTP/2 das conexões do app (tools/tls_check.sh)
@@ -134,6 +135,8 @@ pub fn main(init: std.process.Init.Minimal) !void {
             opts.settings = true;
         } else if (std.mem.eql(u8, arg, "--stats")) {
             opts.stats = true;
+        } else if (std.mem.eql(u8, arg, "--inspect")) {
+            opts.inspect = true;
         } else if (std.mem.eql(u8, arg, "--tls-check")) {
             return tlsCheck(it.next() orelse return fail("--tls-check precisa de um endereço"));
         } else if (std.mem.eql(u8, arg, "--ws-check")) {

@@ -56,6 +56,10 @@ const msg_cache = @import("net/msg_cache.zig");
 const busca_local = @import("net/busca_local.zig");
 const state_cache = @import("net/state_cache.zig");
 const state_snapshot = @import("core/state_snapshot.zig");
+const insp_cap = @import("inspect/captura.zig");
+const insp_reg = @import("inspect/registros.zig");
+const insp_cmd = @import("inspect/comandos.zig");
+const inspetor = @import("inspect/ui.zig");
 const jsonx = @import("net/jsonx.zig");
 const fsutil = @import("platform/fsutil.zig");
 const apagar = @import("platform/apagar.zig");
@@ -113,6 +117,8 @@ pub const Options = struct {
     /// O controle de fora (app_ctl.zig): no app de verdade, ou na demonstração e no QA
     /// com LARPER_CTL (que usam outro arquivo da porta).
     ctl: enum { off, app, demo } = .off,
+    /// Abre com o Inspetor aberto e gravando desde o começo (os pedidos da abertura também).
+    inspect: bool = false,
 };
 
 var wake_type_global: u32 = 0;
@@ -276,6 +282,11 @@ pub const App = struct {
         const started = c.SDL_GetTicksNS();
         const app = try gpa.create(App);
         errdefer gpa.destroy(app);
+        // --inspect (ou LARPER_INSPECT): grava desde já, para os pedidos da abertura entrarem.
+        if (opts.inspect or c.SDL_getenv("LARPER_INSPECT") != null) {
+            inspetor.app_ptr = app;
+            inspetor.open();
+        }
 
         // O fontconfig se prepara enquanto a janela abre (ver fc_warm.zig).
         const fc_warm = @import("platform/fc_warm.zig").start();
@@ -699,6 +710,7 @@ pub const App = struct {
     }
 
     pub fn cmd(app: *App, command: ev.Command) void {
+        insp_reg.evento(.command, command);
         switch (app.net) {
             .none => {},
             .fake => |*g| g.commands.push(command),
@@ -1714,6 +1726,7 @@ pub const App = struct {
     }
 
     pub fn handle(app: *App, a: ev.Action) void {
+        insp_reg.evento(.action, a);
         const st = &app.st;
         if (app.opts.qa and c.SDL_getenv("QA_DEBUG") != null) std.debug.print("[ação] {t}\n", .{a});
         switch (a) {
@@ -2469,6 +2482,7 @@ pub const App = struct {
         var reconnected = false;
         var new_session = false;
         for (batch.items) |e| {
+            insp_reg.evento(.event, e);
             // Botões, menus, modais e comandos: o estado é da interface.
             if (e == .interaction) {
                 interact.onEvent(&app.st, &app.store, e.interaction);
@@ -3362,6 +3376,11 @@ pub const App = struct {
                     // não vale mais, mesmo que o próximo quadro saia igual.
                     if ((e.type >= c.SDL_EVENT_WINDOW_FIRST and e.type <= c.SDL_EVENT_WINDOW_LAST) or
                         e.type == c.SDL_EVENT_RENDER_TARGETS_RESET or e.type == c.SDL_EVENT_RENDER_DEVICE_RESET) app.gate.redraw();
+                    // Escolhendo um elemento no Inspetor: o clique escolhe e não chega ao app.
+                    if (inspetor.takeEvent(&e)) {
+                        got = c.SDL_PollEvent(&e);
+                        continue;
+                    }
                     // Com a lista do autocompletar aberta, setas, Tab, Enter e Esc são dela.
                     const for_list = e.type == c.SDL_EVENT_KEY_DOWN and autocomplete.takeSdlKey(e.key.key, e.key.mod);
                     // The mouse comes in window pixels; ImGui works in points (see NewFrame).
@@ -3405,6 +3424,10 @@ pub const App = struct {
                 got = c.SDL_PollEvent(&e);
             }
             if (input) pending = 3;
+            // O robô do Inspetor (clicar e digitar pelo Console ou pelo ctl), um quadro pedido
+            // para gravar, ou algo novo nas listas com a janela dele aberta.
+            if (insp_cmd.busy() or inspetor.quadros_pedidos > 0) pending = @max(pending, 2);
+            if (inspetor.listsChanged()) bg_dirty = true;
             // Venceu um lembrete: o aviso (e, sem ninguém olhando, a notificação). Antes de
             // olhar se a janela está escondida: na bandeja, a notificação sai assim mesmo.
             if (app_lembretes.check(app)) pending = @max(pending, 2);
@@ -3625,7 +3648,10 @@ pub const App = struct {
             // quem desenha outra caixa (ou nenhuma) deixa isto desligado.
             ime.composer_active = false;
             if (app.store.ready and (app.opts.stats or app.opts.shot != null)) app.scene(settled_frames >= 3);
+            insp_cmd.feed(app.io);
+            insp_cap.beginFrame(inspetor.wantsCapture(), app.st.theme_gen);
             c.ImGui_NewFrame();
+            insp_cap.afterNewFrame();
             qa_mod.beginFrame();
             // (O login por cima da conta aberta, ao adicionar outra, cobre tudo.)
             if (usable and app.login.phase != .form) {
@@ -3656,6 +3682,7 @@ pub const App = struct {
                 // As miniaturas de tema só existem para a página de Configurações.
                 if (app.st.settings.open) app.themes.ensurePreviews();
                 root.frame(&ctx, &app.placed, app.themes.previews.items);
+                inspetor.frame(&ctx, app);
                 plugin_host.pollKeys(app);
                 // Um clique pode ter mexido no Store direto (marcar como não lida
                 // pelo menu): a caixa de entrada confere no próximo quadro.
@@ -3688,6 +3715,10 @@ pub const App = struct {
             const tr0 = c.SDL_GetTicksNS();
             c.ImGui_Render();
             if (app.opts.stats) prof_render += (c.SDL_GetTicksNS() - tr0) / 1000;
+            {
+                const vp = c.ImGui_GetMainViewport();
+                insp_cap.endFrame(app.io.*.MousePos, .{ .x = vp.*.Pos.x, .y = vp.*.Pos.y, .w = vp.*.Size.x, .h = vp.*.Size.y });
+            }
 
             const r = app.win.renderer;
             const bg = app.themes.theme_().c(.bg);
@@ -3731,6 +3762,9 @@ pub const App = struct {
             if (show) c.cImGui_ImplSDLRenderer3_RenderDrawData(draw_data, r);
             if (app.opts.stats) prof_gpu += (c.SDL_GetTicksNS() - tg0) / 1000;
             app.stats.frame_us = @intCast((c.SDL_GetTicksNS() - t0) / 1000);
+            // O print pedido pelo Inspetor (comando shot), com o quadro já desenhado.
+            insp_cmd.afterRender(app);
+            if (inspetor.aberto()) @import("inspect/aba_desempenho.zig").sample(app, app.stats.frame_us, show, now());
 
             if (login_result) |lr| {
                 login_result = null;

@@ -1567,6 +1567,14 @@ fn debugSection(p: *Page) void {
         }
     }
     p.note(i18n.tr("O token nunca entra no arquivo. Ele traz IDs de canais e servidores, nomes de arquivos de mídia e dados da chamada, então dê uma olhada antes de mandar.", "Your token never goes in the file. It has channel and server IDs, media file names and call data, so take a look before you send it."));
+    // O Inspetor (src/inspect/): ver os elementos, a rede, o gateway e o log com o app aberto.
+    var ib: [96]u8 = undefined;
+    var kb: [32]u8 = undefined;
+    if (p.buttonSoft(i18n.fmt(&ib, "Abrir o Inspetor ({s})", "Open the Inspector ({s})", .{teclas.first(&ctx.st.teclas, .inspetor, &kb)}))) {
+        ctx.act(.close_settings);
+        @import("../inspect/ui.zig").open();
+    }
+    p.note(i18n.tr("Ferramentas de desenvolvedor: clicar num elemento e ver de que linha do tema ele vem, o que saiu e chegou da rede e do gateway (sem o token), o log e o custo de cada quadro. Fica só na memória.", "Developer tools: click an element to see which theme line it comes from, what went to and came from the network and the gateway (without your token), the log and the cost of each frame. Stays in memory only."));
     challengeCounts(p);
 }
 

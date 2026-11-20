@@ -74,6 +74,8 @@ QA_SUITE=ctl LARPER_CTL=1 run "controle externo" $bin --qa --theme classico
 # editor num tema claro, em japonês e com a interface em 125%.
 QA_SUITE=imagem run "imagem privada" $bin --qa --theme classico
 QA_SUITE=imagem-tema QA_PREFIX=papel-claro-ja- run "imagem (japonês, 125%)" $bin --qa --theme papel --mode claro --lang ja
+# Inspetor (F12): elementos, escolher na tela, comandos, rede, gateway, eventos, fechar.
+QA_SUITE=inspetor run "inspetor" $bin --qa --theme classico
 # Op 8: os membros dos autores das páginas (DM nunca, no máximo um por servidor a cada
 # 30 s, as páginas se juntando, sem repetir), e o apelido e a cor do cargo numa
 # mensagem antiga depois da resposta.

@@ -245,6 +245,9 @@ pub fn build(b: *std.Build) void {
     mod.addIncludePath(b.path("third_party/libdave/src"));
     mod.addCMacro("IMGUI_ENABLE_FREETYPE", "1");
     mod.addCMacro("IMGUI_USE_WCHAR32", "1"); // emojis fora do plano básico (😂, 🌸...)
+    // Os ganchos de item do ImGui, para o Inspetor (src/inspect/ganchos.cpp): desligados,
+    // cada item paga a leitura de um booleano.
+    mod.addCMacro("IMGUI_ENABLE_TEST_ENGINE", "1");
     // Janela de métricas e log de depuração: ninguém abre (dcimgui ainda cita
     // duas funções deles, então só onde o ligador joga fora o que não é usado).
     if (release and !windows) mod.addCMacro("IMGUI_DISABLE_DEBUG_TOOLS", "1");
@@ -270,6 +273,7 @@ pub fn build(b: *std.Build) void {
     mod.addCSourceFile(.{ .file = b.path("third_party/imgui/imgui_demo.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti", "-DIMGUI_DISABLE_DEMO_WINDOWS" } });
 
     mod.addCSourceFile(.{ .file = b.path("src/ui/font_metrics.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
+    mod.addCSourceFile(.{ .file = b.path("src/inspect/ganchos.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
 
     // Decodificador de imagens (PNG/JPEG/GIF) dos anexos; WebP vem da libwebp.
     mod.addIncludePath(b.path("third_party/stb"));
@@ -522,6 +526,7 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
         m.addCSourceFiles(.{ .root = b.path("third_party"), .files = &web_cxx_sources, .flags = flags });
         m.addCSourceFile(.{ .file = b.path("third_party/imgui/imgui_demo.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti", "-DIMGUI_DISABLE_DEMO_WINDOWS" } });
         m.addCSourceFile(.{ .file = b.path("src/ui/font_metrics.cpp"), .flags = flags });
+        m.addCSourceFile(.{ .file = b.path("src/inspect/ganchos.cpp"), .flags = flags });
         m.addCSourceFile(.{ .file = b.path("third_party/stb/stb_image.c"), .flags = &.{"-O2"} });
         m.addCSourceFile(.{ .file = b.path("src/platform/web/stubs.c"), .flags = &.{"-std=gnu99"} });
         addLua(b, m);
@@ -578,6 +583,7 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
     cm.addIncludePath(host_dir);
     cm.addCMacro("IMGUI_ENABLE_FREETYPE", "1");
     cm.addCMacro("IMGUI_USE_WCHAR32", "1");
+    cm.addCMacro("IMGUI_ENABLE_TEST_ENGINE", "1");
     // libc++ antes dos cabeçalhos do clang que o Zig põe na frente (-I vem antes de -isystem).
     const cxx = b.fmt("-I{s}", .{b.pathJoin(&.{ sys_inc, "c++", "v1" })});
     const c_inc = b.fmt("-isystem{s}", .{sys_inc});
@@ -586,6 +592,7 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
     cm.addCSourceFiles(.{ .root = b.path("third_party"), .files = &web_cxx_sources, .flags = cxx_flags });
     cm.addCSourceFile(.{ .file = b.path("third_party/imgui/imgui_demo.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti", cxx, c_inc, "-DIMGUI_DISABLE_DEMO_WINDOWS" } });
     cm.addCSourceFile(.{ .file = b.path("src/ui/font_metrics.cpp"), .flags = cxx_flags });
+    cm.addCSourceFile(.{ .file = b.path("src/inspect/ganchos.cpp"), .flags = cxx_flags });
     cm.addCSourceFile(.{ .file = b.path("third_party/stb/stb_image.c"), .flags = &.{ "-O2", c_inc } });
     cm.addCSourceFile(.{ .file = b.path("src/platform/web/stubs.c"), .flags = &.{ "-std=gnu99", c_inc } });
     // Lua com o setjmp/longjmp do Emscripten (o mesmo que o emcc liga por padrão).
@@ -681,6 +688,7 @@ fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     for ([_][]const u8{ "third_party/imgui", "third_party/imgui/backends", "third_party/dcimgui", "third_party/dcimgui/backends", "third_party/stb", "third_party/libdave/includes" }) |p| m.addIncludePath(b.path(p));
     m.addCMacro("IMGUI_ENABLE_FREETYPE", "1");
     m.addCMacro("IMGUI_USE_WCHAR32", "1");
+    m.addCMacro("IMGUI_ENABLE_TEST_ENGINE", "1");
     return m;
 }
 

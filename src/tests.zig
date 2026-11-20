@@ -6,6 +6,15 @@ const layout = @import("theme/layout.zig");
 
 test {
     _ = @import("net/retry.zig");
+    _ = @import("inspect/captura.zig");
+    _ = @import("inspect/registros.zig");
+    _ = @import("inspect/curl_insp.zig");
+    _ = @import("inspect/kit.zig");
+    _ = @import("inspect/json_view.zig");
+    _ = @import("inspect/doca.zig");
+    _ = @import("inspect/aba_gateway.zig");
+    _ = @import("inspect/aba_rede.zig");
+    _ = @import("inspect/aba_elementos.zig");
     _ = @import("core/resample.zig");
     _ = @import("core/plain_letters.zig");
     _ = @import("core/gif_favorites.zig");
