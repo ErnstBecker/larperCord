@@ -402,6 +402,7 @@ pub const Gateway = struct {
         g.presence.deinit(alloc);
         g.conta.deinit();
         @import("fake_conta.zig").deinit();
+        @import("fake_pastas.zig").deinit();
         g.rels.deinit(alloc);
     }
 
@@ -1131,6 +1132,11 @@ pub const Gateway = struct {
                     g.emit(.{ .invite_joined = .{ .code = code, .status = status, .guild = if (status == .ok) guildId(2) else 0 } });
                 },
                 .conta => |cc| @import("fake_conta.zig").execute(g, cc),
+                .folders => |f| {
+                    const demo = try demoFolders();
+                    defer @import("../core/pastas.zig").freeFolders(alloc, demo);
+                    try @import("fake_pastas.zig").execute(g, f, demo);
+                },
                 .entrada => |e| try g.demoEntrada(e),
                 .fetch_invite => |code| {
                     _ = sent.invite_fetches.fetchAdd(1, .monotonic);

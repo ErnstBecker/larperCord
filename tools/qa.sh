@@ -90,6 +90,13 @@ epoch=$(( $(date +%s) * 1000 ))
 QA_TABSETS_READ=1 LARPER_DEMO_EPOCH_MS=$epoch QA_SUITE=cache-a run "retrato (grava)" $bin --qa --theme classico
 QA_KEEP_CACHE=1 QA_TABSETS_READ=1 LARPER_DEMO_EPOCH_MS=$epoch LARPER_DEMO_READY_MS=2500 QA_SUITE=cache-b run "retrato (abre)" $bin --qa --theme classico
 QA_SUITE=mascote run "mascote" $bin --qa --theme classico
+# Pastas da barra: arrastar, menus, nome e cor, o que vai para a conta (decodificado de
+# volta), a gravação que falha e outro aparelho; depois a barra deitada, a lista e as
+# abas de texto (que não desenham pastas e só reordenam).
+QA_SUITE=pastas run "pastas" $bin --qa --theme classico
+QA_SUITE=pastas-tema QA_PREFIX=subsolo- run "pastas (barra deitada)" $bin --qa --theme subsolo
+QA_SUITE=pastas-tema QA_PREFIX=papel- run "pastas (lista)" $bin --qa --theme papel
+QA_SUITE=pastas-plana run "pastas (abas de texto)" $bin --qa --theme terminal
 # Lembretes: o relógio adiantado pelo QA, o aviso, o mascote e a notificação; depois dois
 # processos: o que fica gravado volta, e o que venceu com o app fechado avisa atrasado.
 QA_SUITE=lembretes run "lembretes" $bin --qa --theme classico
