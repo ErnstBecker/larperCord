@@ -36,6 +36,7 @@ const settings_video = @import("ui/settings_video.zig");
 const settings_jogos = @import("ui/settings_jogos.zig");
 const ffmpeg = @import("platform/ffmpeg.zig");
 const proxy = @import("net/proxy.zig");
+const enderecos = @import("net/enderecos.zig");
 const kdl = @import("theme/kdl.zig");
 const custom = @import("theme/custom.zig");
 const guild_color = @import("ui/guild_color.zig");
@@ -98,6 +99,14 @@ const Debounce = @import("core/debounce.zig").Debounce;
 /// trocas seguidas (Ctrl+Tab, cliques em sequência) esperam a escolha parar.
 const sub_delay_ms = 250;
 const SubReq = struct { guild: types.Id, channel: types.Id, thread: types.Id };
+
+/// QA_SUITE=rede: o app abre no Discord de mentira (qa_rede.zig). Fora do executável de
+/// debug do QA é sempre false, sem nem olhar a variável.
+fn qaRede(opts: Options) bool {
+    if (comptime !enderecos.pode_trocar) return false;
+    const suite = c.SDL_getenv("QA_SUITE") orelse return false;
+    return opts.qa and std.mem.eql(u8, std.mem.span(suite), "rede");
+}
 
 pub const Options = struct {
     theme: ?[]const u8 = null,
@@ -410,6 +419,9 @@ pub const App = struct {
         const qa_login = opts.qa and if (c.SDL_getenv("QA_SUITE")) |q| std.mem.eql(u8, std.mem.span(q), "login") else false;
         if (opts.login or qa_login) {
             app.login.begin(.form);
+        } else if (qaRede(opts)) {
+            // O net/discord.zig de verdade contra o Discord de mentira local (qa_rede.zig).
+            if (comptime enderecos.pode_trocar) try @import("qa_rede.zig").comecar(app);
         } else if (opts.demo or opts.qa or (opts.shot != null and c.SDL_getenv("LARPER_SHOT_REAL") == null)) {
             // (LARPER_SHOT_REAL=1: print com a conta de verdade, para depurar.)
             // LARPER_DEMO_READY_MS: o READY da demonstração demora como o de verdade, e

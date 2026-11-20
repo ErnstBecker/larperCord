@@ -102,6 +102,9 @@ LARPER_DEMO_EPOCH_MS=$epoch QA_LEMBRETES_READ=1 QA_SUITE=lembretes-b run "lembre
 bash tools/qa_apagar.sh "$bin" || total_fail=1
 # Parado não gasta: quadros desenhados com o app à toa (o --stats do demo).
 bash tools/qa_parado.sh "$bin" || total_fail=1
+# A rede de verdade: o net/discord.zig (WebSocket, zlib-stream, RESUME, REST, 429) contra o
+# Discord de mentira de tools/discord_falso.py, em 127.0.0.1 (precisa de python3).
+bash tools/qa_rede.sh "$bin" || total_fail=1
 QA_SUITE=render run "renderizador" $bin --qa --theme classico
 QA_SUITE=atalhos run "atalhos personalizáveis" $bin --qa --theme classico
 # Um settings.kdl que pede um renderizador que não existe: abre no automático e avisa.
@@ -115,7 +118,8 @@ QA_SUITE=sem-fontes FONTCONFIG_FILE="$PWD/qa-out/sem-fontes.conf" run "sem fonte
 QA_SUITE=voice run "mixer da call" $bin --qa --theme classico
 # As outras baterias do qa_runner.zig rodam dentro da geral ou da "tema" (threads, conta,
 # proxy, chamada, voz, dispositivos, rtl...) ou têm script próprio: lsp-quit em
-# tools/qa_lsp.sh, bandeja-* em tools/qa_bandeja.sh, plugins-tls em tools/qa_http_tls.sh.
+# tools/qa_lsp.sh, bandeja-* em tools/qa_bandeja.sh, plugins-tls em tools/qa_http_tls.sh,
+# rede em tools/qa_rede.sh (chamado logo acima).
 # ffmpeg, plugins-real, vitrine e lsp-real usam a rede ou programas de verdade.
 # Plugins: o que fica gravado ao fechar continua lá ao abrir de novo (outro processo).
 QA_SUITE=plugins-a run "plugins (antes)" $bin --qa
