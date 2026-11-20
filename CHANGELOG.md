@@ -1,5 +1,13 @@
 # What changed in each version
 
+## 0.6.8
+
+**Control from outside**
+- `larpercord ctl` controls the larperCord that is already running, from scripts, status bars and system shortcuts: `status` and `unread` answer in JSON (connection, account, the call with its channel and server, mute, deafen, push to talk, mentions, unread DMs and channels); `mute`, `unmute`, `toggle-mute`, `deafen`, `undeafen` and `toggle-deafen` do the same as the buttons and `Ctrl+Shift+M`/`D`, sound and what goes to Discord included; `show`, `hide` and `toggle` do what the tray does; `open` takes a Discord link or a channel ID. It works with the window hidden in the tray, and answers in the terminal on Windows too. Examples for each desktop are in docs/ctl.md.
+- Push to talk anywhere on Linux: in push to talk mode, `ptt-down` and `ptt-up` press and release the key from outside, so a compositor shortcut (Hyprland's `bind`/`bindr`, Sway's `bindsym --release`) talks even with another window focused, exactly like the key in Settings → Voice. KDE and GNOME shortcuts, which don't fire on release, use `ptt-toggle`. Leaving the call releases it.
+- `watch` keeps running and prints a line each time something changes: the status in JSON, `--waybar` for a waybar module (the number of mentions, an icon per state for the call, muted, deafened, talking, mentions and unread, and a tooltip) or `--format text` for polybar. With the app closed it shows offline and comes back by itself when the app opens.
+- Only your user can use it: the app listens on 127.0.0.1, on a random port, and each connection starts with a key that changes every time the app opens, in a file only you can read. It's on by default, and Settings → Advanced → External control turns it off; off, nothing listens. Nobody using it costs nothing: no polling and no frames. Japanese follows the new texts; the new Russian ones are in English for now.
+
 ## 0.6.7
 
 **Floating window**

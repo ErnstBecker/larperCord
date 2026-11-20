@@ -36,6 +36,7 @@ test {
     _ = @import("core/aviso.zig");
     _ = @import("core/som_arquivo.zig");
     _ = @import("core/janela.zig");
+    _ = @import("core/ctl.zig");
     _ = @import("core/flutuante.zig");
     _ = @import("core/bandeja.zig");
     _ = @import("core/ruido.zig");

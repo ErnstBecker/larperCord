@@ -2908,6 +2908,8 @@ const ops_lsp_quit = [_]Op{expect("pronto", ready)} ++ lsp_ops_quit;
 const qa_bandeja = @import("qa_bandeja.zig");
 const ops_bandeja = [_]Op{expect("pronto", ready)} ++ qa_bandeja.ops;
 const ops_flutuante = [_]Op{expect("pronto", ready)} ++ @import("qa_flutuante.zig").ops;
+/// O controle de fora, `larpercord ctl` (QA_SUITE=ctl, com LARPER_CTL=1).
+const ops_ctl = [_]Op{expect("pronto", ready)} ++ @import("qa_ctl.zig").ops;
 const ops_bandeja_sair = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_no_tray;
 const ops_bandeja_menu = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit;
 const ops_bandeja_sair_aberta = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit_open;
@@ -3359,6 +3361,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "lsp-quit", &ops_lsp_quit },
     .{ "bandeja", &ops_bandeja },
     .{ "flutuante", &ops_flutuante },
+    .{ "ctl", &ops_ctl },
     .{ "bandeja-sair", &ops_bandeja_sair },
     .{ "bandeja-menu", &ops_bandeja_menu },
     .{ "bandeja-sair-aberta", &ops_bandeja_sair_aberta },

@@ -1,5 +1,13 @@
 # O que mudou em cada versão
 
+## 0.6.8
+
+**Controle de fora**
+- O `larpercord ctl` controla o larperCord que já está aberto, por scripts, barras de status e atalhos do sistema: `status` e `unread` respondem em JSON (conexão, conta, a call com o canal e o servidor, mudo, surdo, aperte para falar, menções, DMs e canais não lidos); `mute`, `unmute`, `toggle-mute`, `deafen`, `undeafen` e `toggle-deafen` fazem o mesmo dos botões e de `Ctrl+Shift+M`/`D`, com o som e o que vai para o Discord; `show`, `hide` e `toggle` fazem o que a bandeja faz; `open` recebe um link do Discord ou o ID de um canal. Funciona com a janela escondida na bandeja, e responde no terminal também no Windows. Exemplos para cada ambiente em docs/ctl.pt-BR.md.
+- Aperte para falar em qualquer lugar no Linux: no modo aperte para falar, `ptt-down` e `ptt-up` apertam e soltam a tecla de fora, então um atalho do compositor (o `bind`/`bindr` do Hyprland, o `bindsym --release` do Sway) fala mesmo com outra janela em foco, igual à tecla de Configurações → Voz. Os atalhos do KDE e do GNOME, que não disparam ao soltar, usam o `ptt-toggle`. Sair da call solta.
+- O `watch` fica rodando e escreve uma linha cada vez que algo muda: o status em JSON, `--waybar` para um módulo do waybar (o número de menções, um ícone por estado para call, mudo, surdo, falando, menções e não lidas, e um tooltip) ou `--format text` para o polybar. Com o app fechado ele mostra offline e volta sozinho quando o app abre.
+- Só o seu usuário consegue usar: o app escuta em 127.0.0.1, numa porta sorteada, e cada conexão começa com uma chave que muda a cada vez que o app abre, num arquivo que só você lê. Vem ligado, e Configurações → Avançado → Controle externo desliga; desligado, nada escuta. Sem ninguém usando, não custa nada: nada fica conferindo e nenhum quadro é desenhado. O japonês segue os textos novos; os novos em russo estão em inglês por enquanto.
+
 ## 0.6.7
 
 **Janela flutuante**

@@ -1142,6 +1142,13 @@ fn page(p: *Page, previews: []const Preview) void {
                 p.note(i18n.tr("Indisponível: nenhum painel do sistema mostra ícones agora (StatusNotifier), então fechar a janela encerra o app. Com a opção ligada, o ícone aparece quando houver um.", "Unavailable: no system panel shows icons right now (StatusNotifier), so closing the window quits the app. While on, the icon appears once there is one."));
                 qa.mark(.{ .x = p.x, .y = y0, .w = p.w, .h = p.y - y0 }, "tray-unavailable", .{});
             }
+            // A porta do `larpercord ctl` (app_ctl.zig) abre e fecha com a opção. Na
+            // demonstração ela só existe com LARPER_CTL (os testes usam).
+            if (!sys.web) {
+                const ctl_ok = @import("../platform/ctl.zig").allowed;
+                p.toggleIf(i18n.tr("Controle externo (larpercord ctl)", "External control (larpercord ctl)"), i18n.tr("Scripts e atalhos do sistema controlam o app aberto com o larpercord ctl: mutar, aperte para falar, mostrar a janela, abrir um canal, contar as não lidas. Só o seu usuário deste computador consegue usar.", "Scripts and system shortcuts control the running app with larpercord ctl: mute, push to talk, show the window, open a channel, count unread messages. Only your user on this computer can use it."), &s.external_control, ctl_ok);
+                if (!ctl_ok) p.note(i18n.tr("Na demonstração, só com LARPER_CTL=1 (para testes).", "In the demo, only with LARPER_CTL=1 (for testing)."));
+            }
             textSection(p);
             debugSection(p);
             dataSection(p);

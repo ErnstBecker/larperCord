@@ -63,6 +63,7 @@ const app_accounts = @import("app_accounts.zig");
 const app_chamada = @import("app_chamada.zig");
 const app_presenca = @import("app_presenca.zig");
 const app_flutuante = @import("app_flutuante.zig");
+const app_ctl = @import("app_ctl.zig");
 const voz_audio = @import("net/voz_audio.zig");
 const aviso = @import("core/aviso.zig");
 const sons = @import("core/sons.zig");
@@ -108,6 +109,9 @@ pub const Options = struct {
     login: bool = false,
     /// Força o idioma (ignora as configurações).
     lang: ?@import("ui/i18n.zig").Lang = null,
+    /// O controle de fora (app_ctl.zig): no app de verdade, ou na demonstração e no QA
+    /// com LARPER_CTL (que usam outro arquivo da porta).
+    ctl: enum { off, app, demo } = .off,
 };
 
 var wake_type_global: u32 = 0;
@@ -428,6 +432,7 @@ pub const App = struct {
         updater.offline = opts.qa;
         updater.cleanLeftovers();
         if (opts.qa) tray.fake = false;
+        @import("platform/ctl.zig").allowed = opts.ctl != .off;
         // O ícone da bandeja espera a janela aparecer: perguntar pelo painel e abrir
         // o processo do ícone não atrasam o primeiro quadro.
         app.tray_on_was = app.st.settings.close_to_tray;
@@ -448,7 +453,7 @@ pub const App = struct {
     /// Fechou a janela e ela deve ficar na bandeja? O app segue conectado e
     /// avisando, sem desenhar. Falso: sem bandeja, ou opção desligada; aí fechar
     /// sai de verdade, nunca fica um processo invisível sem caminho de volta.
-    fn hideToTray(app: *App) bool {
+    pub fn hideToTray(app: *App) bool {
         if (app.opts.shot != null or app.restart_wanted) return false;
         const logged_in = app.store.ready and !app.login.visible();
         if (!janela.wantsTray(app.st.settings.close_to_tray, logged_in)) return false;
@@ -543,7 +548,7 @@ pub const App = struct {
     }
 
     /// Clique no ícone da bandeja: alterna a janela (ver janela.trayClick).
-    fn toggleWindow(app: *App) void {
+    pub fn toggleWindow(app: *App) void {
         const flags = c.SDL_GetWindowFlags(app.win.window);
         const vista = janela.trayVista(
             app.in_tray or flags & c.SDL_WINDOW_HIDDEN != 0,
@@ -627,6 +632,7 @@ pub const App = struct {
         tray.hide();
         sys.toastExpire(0, true);
         instance.stopListening();
+        app_ctl.stop();
         if (keep) app.saveSettings();
         // A aba ativa do conjunto em uso (o resto já foi gravado na hora).
         if (keep and (app.store.ready or app.store.from_cache)) app_conjuntos.flush(app);
@@ -1165,6 +1171,8 @@ pub const App = struct {
         app.st.voice_out_failed = false;
         voz_audio.sh.server_mute.store(false, .release);
         voz_audio.sh.server_deaf.store(false, .release);
+        // O aperte para falar apertado de fora (larpercord ctl) não passa para a próxima call.
+        voz_audio.holdExternal(false);
     }
 
     /// O servidor nos mutou ou ensurdeceu (ou deixou de): a thread de voz para
@@ -3147,6 +3155,10 @@ pub const App = struct {
                 app_flutuante.esconder(app);
                 break;
             }
+            // O controle de fora segue a opção, e quem está no `watch` recebe o que a
+            // volta anterior (eventos e quadro) mudou, antes de o laço dormir.
+            app_ctl.sync(app);
+            app_ctl.notify(app);
             var e: c.SDL_Event = undefined;
             // O relógio do sistema andou para trás: sem isso, o quadro adiado
             // só viria quando ele alcançasse a hora antiga.
@@ -3294,6 +3306,14 @@ pub const App = struct {
                         // mudou, a nossa linha nova chega pelo gateway e desenha).
                         .jogo => {
                             app_presenca.gameWake(app);
+                            tick_seen = true;
+                        },
+                        // Pedidos do `larpercord ctl`: rodam aqui, fora do quadro (valem com
+                        // a janela na bandeja). Só o que mexe na tela pede um.
+                        .ctl => if (app_ctl.pump(app)) {
+                            pending = 3;
+                            app_flutuante.marcar(app);
+                        } else {
                             tick_seen = true;
                         },
                     }
@@ -3842,7 +3862,7 @@ pub const App = struct {
                         wl.pending = @max(wl.pending, 2);
                     },
                     .quit => return false,
-                    .theme, .token, .show, .toggle, .tray_gone, .mascot => {},
+                    .theme, .token, .show, .toggle, .tray_gone, .mascot, .jogo, .ctl => {},
                 }
                 continue;
             }

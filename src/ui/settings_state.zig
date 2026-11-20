@@ -320,6 +320,9 @@ pub const Settings = struct {
     /// (O `tray_always` de um build de desenvolvimento da 0.6.2 virou esta opção: num
     /// arquivo que ainda o tenha, ele é ignorado.)
     close_to_tray: bool = true,
+    /// `larpercord ctl`: scripts e atalhos do sistema controlam o app aberto (app_ctl.zig).
+    /// Desligado, não há porta nenhuma escutando.
+    external_control: bool = true,
     /// 0 = seguir o sistema, 1 = português, 2 = inglês, 3 = japonês.
     language: u8 = 0,
     /// 0 = escuro, 1 = claro, 2 = seguir o sistema.
