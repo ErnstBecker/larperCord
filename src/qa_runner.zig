@@ -2913,6 +2913,7 @@ const ops_ctl = [_]Op{expect("pronto", ready)} ++ @import("qa_ctl.zig").ops;
 const ops_imagem = [_]Op{expect("pronto", ready)} ++ @import("qa_imagem.zig").ops;
 const ops_imagem_tema = [_]Op{expect("pronto", ready)} ++ @import("qa_imagem.zig").ops_tema;
 const ops_inspetor = [_]Op{expect("pronto", ready)} ++ @import("qa_inspetor.zig").ops;
+const ops_notificacao = [_]Op{expect("pronto", ready)} ++ @import("qa_notificacao.zig").ops;
 const ops_bandeja_sair = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_no_tray;
 const ops_bandeja_menu = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit;
 const ops_bandeja_sair_aberta = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit_open;
@@ -3368,6 +3369,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "imagem", &ops_imagem },
     .{ "imagem-tema", &ops_imagem_tema },
     .{ "inspetor", &ops_inspetor },
+    .{ "notificacao", &ops_notificacao },
     .{ "bandeja-sair", &ops_bandeja_sair },
     .{ "bandeja-menu", &ops_bandeja_menu },
     .{ "bandeja-sair-aberta", &ops_bandeja_sair_aberta },

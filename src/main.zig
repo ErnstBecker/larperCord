@@ -152,6 +152,11 @@ pub fn main(init: std.process.Init.Minimal) !void {
         } else if (@import("builtin").mode == .debug and !sys.windows and std.mem.eql(u8, arg, "--qa-lsp-server")) {
             // O servidor de linguagem de mentira do QA (src/qa_lsp_server.zig), só em debug.
             @import("qa_lsp_server.zig").run(it.next() orelse return fail("--qa-lsp-server precisa de um modo"));
+        } else if (@import("ui/qa.zig").compiled and !sys.windows and std.mem.eql(u8, arg, "--qa-notif-server")) {
+            // O servidor de notificações de mentira do QA (src/qa_notif_server.zig).
+            const caps = it.next() orelse return fail("--qa-notif-server precisa das capacidades e do arquivo do registro");
+            const log = it.next() orelse return fail("--qa-notif-server precisa das capacidades e do arquivo do registro");
+            @import("qa_notif_server.zig").run(caps, log);
         } else if (!sys.windows and std.mem.eql(u8, arg, "--tray-helper")) {
             // Só o próprio app chama (platform/tray.zig): é o processo do ícone da bandeja.
             const open = it.next() orelse return fail("--tray-helper precisa de dois rótulos");

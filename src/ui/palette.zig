@@ -192,6 +192,7 @@ const toggle_names = [_]struct { field: []const u8, pt: []const u8, en: []const 
     .{ .field = "gif_hosts", .pt = "Animar GIFs do Tenor e do Giphy", .en = "Animate Tenor and Giphy GIFs" },
     .{ .field = "streamer_mode", .pt = "Modo streamer", .en = "Streamer Mode" },
     .{ .field = "desktop_notifs", .pt = "Notificações na área de trabalho", .en = "Desktop notifications" },
+    .{ .field = "notif_reply", .pt = "Responder pela notificação", .en = "Reply from the notification" },
     .{ .field = "taskbar_flash", .pt = "Piscar na barra de tarefas", .en = "Flash taskbar" },
     .{ .field = "message_sound", .pt = "Som de mensagem nova", .en = "New message sound" },
     .{ .field = "vim_keys", .pt = "Navegação estilo vim", .en = "Vim-style navigation" },

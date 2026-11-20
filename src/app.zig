@@ -69,6 +69,7 @@ const app_chamada = @import("app_chamada.zig");
 const app_presenca = @import("app_presenca.zig");
 const app_flutuante = @import("app_flutuante.zig");
 const app_ctl = @import("app_ctl.zig");
+const app_notificacao = @import("app_notificacao.zig");
 const voz_audio = @import("net/voz_audio.zig");
 const aviso = @import("core/aviso.zig");
 const sons = @import("core/sons.zig");
@@ -492,14 +493,19 @@ pub const App = struct {
     /// Volta da bandeja (ou traz para a frente, se a janela já estava aberta). Com
     /// "Fechar para a bandeja" ligado o ícone fica; desligado, não há ícone para tirar.
     pub fn showWindow(app: *App) void {
+        var tok_buf: [bandeja.token_max + 1]u8 = undefined;
+        app.showWindowWith(tray.takeActivationToken(&tok_buf));
+    }
+
+    /// `showWindow` com a ficha do xdg-activation de quem pediu: a do painel, no clique
+    /// no ícone, ou a do servidor de notificações, no clique numa notificação.
+    pub fn showWindowWith(app: *App, token: ?[:0]const u8) void {
         if (!app.st.settings.close_to_tray) tray.hide();
         app.in_tray = false;
         app.tray_misses = 0;
-        // Wayland: com a ficha que o painel mandou junto do clique, o compositor deixa
-        // a janela voltar com o foco. O SDL só a usa ao mostrar uma janela escondida
+        // Wayland: com a ficha que veio junto do clique, o compositor deixa a janela
+        // voltar com o foco. O SDL só a usa ao mostrar uma janela escondida
         // (XDG_ACTIVATION_TOKEN, lido do ambiente dele e apagado em seguida).
-        var tok_buf: [bandeja.token_max + 1]u8 = undefined;
-        const token = tray.takeActivationToken(&tok_buf);
         const flags = c.SDL_GetWindowFlags(app.win.window);
         const hidden = flags & c.SDL_WINDOW_HIDDEN != 0;
         const minimized = flags & c.SDL_WINDOW_MINIMIZED != 0;
@@ -532,6 +538,7 @@ pub const App = struct {
         if (!(first and !classic)) app.win.setIcon(classic);
         tray.setMascot(classic);
         sys.setToastMascot(classic);
+        app_notificacao.mascote(classic);
         // O QA e os prints nunca mexem na pasta do usuário.
         if (!app.opts.qa and app.opts.shot == null) _ = icone_sistema.sync(platform.iconPng(classic, .menu), classic);
     }
@@ -643,6 +650,8 @@ pub const App = struct {
         app_flutuante.fechar(app, false);
         tray.hide();
         sys.toastExpire(0, true);
+        // As notificações com botões saem da tela: ninguém mais atenderia os botões.
+        app_notificacao.parar();
         instance.stopListening();
         app_ctl.stop();
         if (keep) app.saveSettings();
@@ -915,8 +924,10 @@ pub const App = struct {
 
     /// Volta ao estado de antes do login: sem conta, sem abas, sem nada.
     pub fn resetSession(app: *App) void {
-        // A janela flutuante segue algo da conta que está saindo.
+        // A janela flutuante segue algo da conta que está saindo, e as notificações
+        // também (os botões delas apontam para canais desta conta).
         app_flutuante.fechar(app, true);
+        app_notificacao.fecharTodas();
         // O que estava na tela vai para o cache antes de sumir, e os conjuntos de
         // abas da conta para o arquivo dela.
         msg_cache.flushDirty(&app.store);
@@ -1385,7 +1396,7 @@ pub const App = struct {
         return std.fmt.bufPrintSentinel(buf, "{s}/drafts.kdl", .{p[0..slash]}, 0) catch null;
     }
 
-    fn saveDrafts(app: *App) void {
+    pub fn saveDrafts(app: *App) void {
         if (!app.st.drafts.dirty) return;
         if (app.opts.shot != null or app.opts.qa) {
             app.st.drafts.dirty = false;
@@ -1549,6 +1560,8 @@ pub const App = struct {
         const target = cs.info.last_message;
         app.store.markRead(id);
         app.st.filtros.clear(&app.store, id);
+        // Lida aqui: as notificações dela saem da tela.
+        app_notificacao.lida(id);
         if (target != 0 and (asked or app.st.window_focused)) app.cmd(.{ .ack = .{ .channel = id, .message = target, .last_viewed = leitura.lastViewed(now()) } });
     }
 
@@ -1698,7 +1711,7 @@ pub const App = struct {
 
     /// Trocou de canal: o texto da caixa vira o rascunho do anterior e o
     /// rascunho do novo volta para a caixa (uma edição em andamento é cancelada).
-    fn syncDraft(app: *App) void {
+    pub fn syncDraft(app: *App) void {
         const st = &app.st;
         const ch = st.activeChannel() orelse 0;
         if (!st.drafts.switchTo(app.gpa, ch, &st.input, st.editing == 0)) return;
@@ -2698,6 +2711,8 @@ pub const App = struct {
                 if (store_mod.read_debug) std.log.info("leitura: ack do Discord no canal {d}: até {d}, menções {?d}, manual {}", .{ r.channel, r.message, r.mentions, r.manual });
                 if (!cs.info.unread) {
                     st.filtros.clear(&app.store, r.channel);
+                    // Lida em outro aparelho: as notificações daqui também saem.
+                    app_notificacao.lida(r.channel);
                 } else if (r.mentions) |n| st.filtros.setCount(app.gpa, &app.store, r.channel, n);
                 // "Não lida" marcada em outro aparelho, com o canal aberto aqui.
                 if (r.manual and cs.info.unread and st.activeChannel() == r.channel) {
@@ -2705,8 +2720,14 @@ pub const App = struct {
                     cs.divider_seen = false;
                 }
             },
-            // Falar é ter lido: o contador zera junto.
-            .message_create => |m| if (m.author == app.store.me) st.filtros.clear(&app.store, m.channel),
+            // Falar é ter lido: o contador zera junto, e as notificações da conversa saem
+            // (respondida pela notificação, por aqui ou em outro aparelho).
+            .message_create => |m| if (m.author == app.store.me) {
+                st.filtros.clear(&app.store, m.channel);
+                app_notificacao.lida(m.channel);
+            },
+            // Uma resposta pela notificação que o Discord recusou: avisa por outra.
+            .send_failed => |f| app_notificacao.falhou(app, f.channel, f.nonce),
             // Limites de envio: quem mostra é a caixa de texto.
             .my_limits => |l| send_limits.state.applyMember(std.heap.c_allocator, l.guild, l.timeout_until_ms, l.member_flags, now()),
             .account_flags => |f| send_limits.state.user_flags = f,
@@ -2743,9 +2764,11 @@ pub const App = struct {
     }
 
     /// DM ou menção chegando sem a pessoa olhando: a janela pisca na barra
-    /// de tarefas e sai uma notificação do sistema (notify-send).
+    /// de tarefas e sai uma notificação do sistema, com os botões de ler e
+    /// responder (app_notificacao.zig).
     fn notify(app: *App, m: types.Message, cs: *const @import("core/store.zig").ChannelState) void {
-        if (app.opts.qa or app.store.demo) return;
+        // O QA liga para conferir o caminho inteiro na demonstração (qa_notificacao.zig).
+        if ((app.opts.qa or app.store.demo) and !app_notificacao.qa_ligado) return;
         const set = &app.st.settings;
         const flags = c.SDL_GetWindowFlags(app.win.window);
         const hidden = flags & c.SDL_WINDOW_HIDDEN != 0;
@@ -2767,7 +2790,7 @@ pub const App = struct {
         while (cut > 0 and cut < body_src.len and (body_src[cut] & 0xC0) == 0x80) cut -= 1;
         var bb: [208]u8 = undefined;
         const body = std.fmt.bufPrintSentinel(&bb, "{s}{s}", .{ body_src[0..cut], if (cut < body_src.len) "…" else "" }, 0) catch return;
-        app.desktopNotify(title, body);
+        app_notificacao.mensagem(app, m, cs, title, body);
     }
 
     /// Achou versão nova. A faixa no topo aparece sozinha (ui/aviso_atualizacao.zig); com
@@ -2822,14 +2845,10 @@ pub const App = struct {
         voz_audio.play(.message);
     }
 
-    /// Uma notificação do sistema: notify-send no Linux, o aviso da bandeja no Windows.
+    /// Uma notificação do sistema sem os botões de mensagem (lembrete, chamada, versão
+    /// nova, plugin): o clique traz a janela (app_notificacao.zig).
     pub fn desktopNotify(app: *App, title: [:0]const u8, body: [:0]const u8) void {
-        if (app.notifiers.items.len >= 8) return;
-        if (sys.windows) return sys.toast(c.SDL_GetPointerProperty(c.SDL_GetWindowProperties(app.win.window), c.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null), now(), title, body);
-        // O ícone pelo nome: o do mascote escolhido (ver applyMascot e icone_sistema).
-        var args = [_:null]?[*:0]const u8{ "notify-send", "--app-name=larperCord", "--icon=larpercord", "--", title.ptr, body.ptr };
-        const proc = c.SDL_CreateProcess(@ptrCast(&args), false) orelse return;
-        app.notifiers.append(app.gpa, proc) catch c.SDL_DestroyProcess(proc);
+        app_notificacao.simples(app, title, body);
     }
 
     /// Recolhe os notify-send que já terminaram (sem deixar processo zumbi).
@@ -3357,6 +3376,14 @@ pub const App = struct {
                             app_flutuante.marcar(app);
                         } else {
                             tick_seen = true;
+                        },
+                        // Clique, botão ou resposta numa notificação: abrir traz a janela;
+                        // ler e responder não a mostram e mudam a tela como a rede muda.
+                        .notificacao => if (app_notificacao.pedidos(app)) {
+                            app.gate.redraw();
+                            pending = 3;
+                        } else {
+                            bg_dirty = true;
                         },
                     }
                 } else if (app_flutuante.owns(app, &e)) {
@@ -3927,7 +3954,7 @@ pub const App = struct {
                         wl.pending = @max(wl.pending, 2);
                     },
                     .quit => return false,
-                    .theme, .token, .show, .toggle, .tray_gone, .mascot, .jogo, .ctl => {},
+                    .theme, .token, .show, .toggle, .tray_gone, .mascot, .jogo, .ctl, .notificacao => {},
                 }
                 continue;
             }

@@ -224,6 +224,8 @@ pub const Settings = struct {
 
     // Notificações (DMs e menções)
     desktop_notifs: bool = true,
+    /// "Marcar como lida" e "Responder" nas notificações de mensagens (app_notificacao.zig).
+    notif_reply: bool = true,
     taskbar_flash: bool = true,
     /// O som de mensagem nova (core/aviso.zig decide quando; o som em si é o
     /// `sound_message` abaixo, com os da call).

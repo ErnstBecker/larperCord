@@ -48,6 +48,7 @@ test {
     _ = @import("core/ctl.zig");
     _ = @import("core/flutuante.zig");
     _ = @import("core/bandeja.zig");
+    _ = @import("core/notificacao.zig");
     _ = @import("core/ruido.zig");
     _ = @import("core/nivel.zig");
     _ = @import("core/lsp.zig");

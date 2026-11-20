@@ -28,6 +28,8 @@ pub const Wake = enum(i32) {
     jogo = 12,
     /// Pedidos do controle de fora (`larpercord ctl`, app_ctl.zig).
     ctl = 13,
+    /// Clique, botão ou resposta numa notificação do sistema (app_notificacao.zig).
+    notificacao = 14,
 };
 
 /// O renderizador que abriu (para Configurações → Desempenho) e se o escolhido nas
