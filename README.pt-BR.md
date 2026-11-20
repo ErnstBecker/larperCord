@@ -308,8 +308,10 @@ Nada de mágica, só muitas decisões pequenas:
 5. **Markdown interpretado uma vez**, quando a mensagem chega. A interface só faz layout dos
    trechos, com **cache de altura por largura**.
 6. **Lista virtualizada**: busca binária pelo primeiro item visível, desenha só a tela.
-7. **Memória com teto**: 1.500 mensagens por canal e, por padrão, 2.000 no total (Configurações → Desempenho muda), e as antigas são liberadas. Depois
-   de um minuto na bandeja ou minimizada, as imagens também saem da memória, menos as pequenas que estavam na tela.
+7. **Memória com teto**: 1.500 mensagens por canal e, por padrão, 2.000 no total (Configurações → Desempenho muda), e as antigas são liberadas. Uma
+   imagem que não é desenhada há um minuto sai da memória, com os quadros dos GIFs. Na bandeja, a janela, o renderizador (o contexto da GPU) e todas as
+   texturas vão embora de uma vez e a memória volta ao sistema; só as imagens pequenas que estavam na tela ficam, em pixels, para a janela voltar
+   inteira. Depois de um minuto minimizada, as imagens também saem da memória, menos essas pequenas.
 8. **No Linux, o fontconfig é liberado** depois de resolver as fontes (`FcFini` + `malloc_trim`). O
    Windows não tem fontconfig: as fontes são abertas direto de `C:\Windows\Fonts`.
 9. **Sem cursor piscando**: o cursor piscando sozinho manteria a CPU acordada.

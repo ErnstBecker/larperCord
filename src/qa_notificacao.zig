@@ -298,7 +298,7 @@ fn paraBandeja(app: *App) void {
     _ = c.SDL_PushEvent(&e);
 }
 fn naBandeja(app: *App) bool {
-    return c.SDL_GetWindowFlags(app.win.window) & c.SDL_WINDOW_HIDDEN != 0 and app.in_tray;
+    return app.win.flags() & c.SDL_WINDOW_HIDDEN != 0 and app.in_tray;
 }
 
 var dm_c: Id = 0;

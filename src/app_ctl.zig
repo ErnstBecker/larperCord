@@ -238,7 +238,7 @@ fn key(app: *App) u64 {
         mentions,
         st.muted_channels.count(),
         @intFromBool(app.in_tray),
-        c.SDL_GetWindowFlags(app.win.window) & (c.SDL_WINDOW_HIDDEN | c.SDL_WINDOW_MINIMIZED),
+        app.win.flags() & (c.SDL_WINDOW_HIDDEN | c.SDL_WINDOW_MINIMIZED),
     };
     return std.hash.Wyhash.hash(1, std.mem.asBytes(&parts)) | 1;
 }
@@ -290,7 +290,7 @@ fn channelName(app: *App, ch: Id) []const u8 {
 }
 
 fn windowState(app: *App) []const u8 {
-    const f = c.SDL_GetWindowFlags(app.win.window);
+    const f = app.win.flags();
     if (app.in_tray or f & c.SDL_WINDOW_HIDDEN != 0) return "hidden";
     if (f & c.SDL_WINDOW_MINIMIZED != 0) return "minimized";
     return "shown";

@@ -248,6 +248,12 @@ pub const App = struct {
     /// Muita memória acabou de ser solta (READY, rajada de imagens): o tique
     /// do relógio devolve ao sistema.
     trim_wanted: std.atomic.Value(bool) = .init(false),
+    /// A janela foi para a bandeja e a parte da GPU saiu (`releaseGpu`): o tique devolve
+    /// tudo o que der (no Windows, os heaps e o conjunto de trabalho também).
+    giveback_wanted: std.atomic.Value(bool) = .init(false),
+    /// Quantas vezes a parte da GPU saiu e voltou (o QA confere).
+    gpu_releases: u32 = 0,
+    gpu_restores: u32 = 0,
     /// O tique do relógio acordou só porque o minuto virou (sem RAM nova para
     /// mostrar): se um quadro já saiu neste minuto, não precisa de outro.
     minute_tick: std.atomic.Value(bool) = .init(false),
@@ -401,7 +407,7 @@ pub const App = struct {
         app.themes.watch(wakeTheme);
         mascote_arquivos.setup(wakeMascot);
         // Antes da rede: a thread do gateway inicia o libcurl pelo mesmo caminho.
-        app.images = try images.Cache.init(app.win.renderer, app.win.wake_type);
+        app.images = try images.Cache.init(app.win.renderer.?, app.win.wake_type);
         @import("ui/exportar.zig").init(app.win.wake_type);
 
         // Com token salvo: conecta direto (a tela de abertura aparece enquanto
@@ -500,13 +506,21 @@ pub const App = struct {
     /// `showWindow` com a ficha do xdg-activation de quem pediu: a do painel, no clique
     /// no ícone, ou a do servidor de notificações, no clique numa notificação.
     pub fn showWindowWith(app: *App, token: ?[:0]const u8) void {
+        // Da bandeja, a janela foi embora com a parte da GPU: volta agora, ainda escondida.
+        if (!app.ensureGpu()) {
+            // Sem janela não há como seguir: sai como pelo Sair (grava tudo).
+            var quit = std.mem.zeroes(c.SDL_Event);
+            quit.type = c.SDL_EVENT_QUIT;
+            _ = c.SDL_PushEvent(&quit);
+            return;
+        }
         if (!app.st.settings.close_to_tray) tray.hide();
         app.in_tray = false;
         app.tray_misses = 0;
         // Wayland: com a ficha que veio junto do clique, o compositor deixa a janela
         // voltar com o foco. O SDL só a usa ao mostrar uma janela escondida
         // (XDG_ACTIVATION_TOKEN, lido do ambiente dele e apagado em seguida).
-        const flags = c.SDL_GetWindowFlags(app.win.window);
+        const flags = app.win.flags();
         const hidden = flags & c.SDL_WINDOW_HIDDEN != 0;
         const minimized = flags & c.SDL_WINDOW_MINIMIZED != 0;
         const env = c.SDL_GetEnvironment();
@@ -520,8 +534,49 @@ pub const App = struct {
         // Aberta, atrás de outra ou minimizada: no Wayland a ficha vai direto ao
         // compositor. O SDL_RaiseWindow pediria outra com o foco no painel, que o KWin
         // e o Mutter recusam.
-        if (token != null and !hidden and wl_ativacao.activate(app.win.window, token.?)) return;
+        if (token != null and !hidden and wl_ativacao.activate(app.win.window.?, token.?)) return;
         _ = c.SDL_RaiseWindow(app.win.window);
+    }
+
+    /// Na bandeja, sem a janela flutuante (que desenha com o mesmo renderizador): a parte
+    /// da GPU vai embora, em vez de só esconder a janela. Saem as texturas das imagens
+    /// (as pequenas que estavam na tela ficam em pixels: images.Cache.detach), do vídeo,
+    /// das camadas, dos efeitos do tema, do editor de imagem e o atlas das fontes (o
+    /// ImGui guarda os pixels dele e refaz a textura sozinho), e depois o renderizador
+    /// (o contexto da GPU) e a janela. O tique do relógio devolve a memória ao sistema.
+    /// Volta com `ensureGpu`, no mostrar.
+    fn releaseGpu(app: *App) void {
+        if (app.win.window == null) return;
+        // A tecla apertada não fica presa: o ImGui solta tudo ao perder o foco (o aviso
+        // do SDL chegaria depois de o backend sair).
+        c.ImGuiIO_AddFocusEvent(app.io, false);
+        app.images.detach();
+        @import("ui/video.zig").dropTexture();
+        @import("ui/camada.zig").dropTextures();
+        @import("ui/fx.zig").dropAll();
+        @import("ui/editor_imagem.zig").dropTexture();
+        // Windows: o ícone do balão é desta janela (o próximo usa a do ícone da bandeja).
+        sys.toastExpire(0, true);
+        c.cImGui_ImplSDLRenderer3_Shutdown();
+        c.cImGui_ImplSDL3_Shutdown();
+        app.win.release();
+        app.gpu_releases += 1;
+        app.giveback_wanted.store(true, .release);
+        if (app.opts.stats) std.log.info("bandeja: a janela, o renderizador e as texturas saíram ({d} imagens em pixels)", .{app.images.parkedCount()});
+    }
+
+    /// A janela e o renderizador de novo (escondida: quem chama mostra), com os backends
+    /// do ImGui; o atlas das fontes volta para a GPU no próximo quadro, e as imagens
+    /// quando forem desenhadas. Falso: não deu para criar a janela.
+    pub fn ensureGpu(app: *App) bool {
+        if (app.win.window != null) return true;
+        if (!app.win.recreate(mascote.Kind.of(app.st.settings.mascot) == .classico)) return false;
+        _ = c.cImGui_ImplSDL3_InitForSDLRenderer(app.win.window, app.win.renderer);
+        _ = c.cImGui_ImplSDLRenderer3_Init(app.win.renderer);
+        app.images.attach(app.win.renderer.?);
+        app.gate.redraw();
+        app.gpu_restores += 1;
+        return true;
     }
 
     /// Os ícones seguem o mascote das Configurações (ui/mascote.zig): o da janela
@@ -568,7 +623,7 @@ pub const App = struct {
 
     /// Clique no ícone da bandeja: alterna a janela (ver janela.trayClick).
     pub fn toggleWindow(app: *App) void {
-        const flags = c.SDL_GetWindowFlags(app.win.window);
+        const flags = app.win.flags();
         const vista = janela.trayVista(
             app.in_tray or flags & c.SDL_WINDOW_HIDDEN != 0,
             flags & (c.SDL_WINDOW_MINIMIZED | c.SDL_WINDOW_OCCLUDED) != 0,
@@ -639,7 +694,7 @@ pub const App = struct {
 
     /// Pontos da interface para pixels da janela: o único fator de escala do app.
     pub fn uiScale(app: *const App) f32 {
-        return platform.contentScale(app.win.window) * app.ui_size;
+        return app.win.scale() * app.ui_size;
     }
 
     pub fn destroy(app: *App) void {
@@ -709,8 +764,11 @@ pub const App = struct {
         send_limits.reset();
         app.themes.deinit();
         @import("ui/camada.zig").shutdown();
-        c.cImGui_ImplSDLRenderer3_Shutdown();
-        c.cImGui_ImplSDL3_Shutdown();
+        // Saindo da bandeja, os backends já tinham saído junto com a janela (`releaseGpu`).
+        if (app.win.window != null) {
+            c.cImGui_ImplSDLRenderer3_Shutdown();
+            c.cImGui_ImplSDL3_Shutdown();
+        }
         c.ImGui_DestroyContext(null);
         app.win.deinit();
         // Por último: quem assumir a trava (um reinício) já acha tudo gravado.
@@ -1083,7 +1141,11 @@ pub const App = struct {
         // Aqui, e não na thread da UI: varrer as arenas leva milissegundos. Em
         // call fica para depois: durante a varredura, quem pede memória espera,
         // e a voz não pode esperar. O pedido continua valendo até a call acabar.
-        if (!voz_audio.in_call.load(.acquire) and app.trim_wanted.swap(false, .acq_rel)) mem_tune.trim();
+        if (!voz_audio.in_call.load(.acquire)) {
+            const all = app.giveback_wanted.swap(false, .acq_rel);
+            if (app.trim_wanted.swap(false, .acq_rel) or all) mem_tune.trim();
+            if (all) mem_tune.giveBack();
+        }
         // O número da RAM: só se está na tela. Varrer o mapa de memória do
         // processo leva milissegundos, e o tique roda mesmo com tudo parado.
         const ram_seen = @atomicRmw(bool, &app.stats.ram_seen, .Xchg, false, .monotonic);
@@ -2391,7 +2453,7 @@ pub const App = struct {
                 st.focus_input = true;
             },
             .toggle_fullscreen => {
-                const on = c.SDL_GetWindowFlags(app.win.window) & c.SDL_WINDOW_FULLSCREEN != 0;
+                const on = app.win.flags() & c.SDL_WINDOW_FULLSCREEN != 0;
                 _ = c.SDL_SetWindowFullscreen(app.win.window, !on);
             },
             .open_settings => {
@@ -2770,7 +2832,7 @@ pub const App = struct {
         // O QA liga para conferir o caminho inteiro na demonstração (qa_notificacao.zig).
         if ((app.opts.qa or app.store.demo) and !app_notificacao.qa_ligado) return;
         const set = &app.st.settings;
-        const flags = c.SDL_GetWindowFlags(app.win.window);
+        const flags = app.win.flags();
         const hidden = flags & c.SDL_WINDOW_HIDDEN != 0;
         const focused = app.windowFocused();
         if (aviso.seen(focused, app.st.activeChannel() == m.channel)) return;
@@ -2805,7 +2867,7 @@ pub const App = struct {
             @memcpy(auto_tried_buf[0..auto_tried_len], v[0..auto_tried_len]);
             updater.install();
         }
-        const flags = c.SDL_GetWindowFlags(app.win.window);
+        const flags = app.win.flags();
         const focused = flags & c.SDL_WINDOW_HIDDEN == 0 and flags & c.SDL_WINDOW_INPUT_FOCUS != 0;
         if (focused or !app.st.settings.desktop_notifs or app.opts.qa) return;
         var bb: [160]u8 = undefined;
@@ -2819,7 +2881,7 @@ pub const App = struct {
     /// A janela está à frente, com o foco? Escondida na bandeja não conta. O QA
     /// e os prints rodam fora da tela, sem foco de verdade: lá vale `qa_blur`.
     fn windowFocused(app: *App) bool {
-        const flags = c.SDL_GetWindowFlags(app.win.window);
+        const flags = app.win.flags();
         if (flags & c.SDL_WINDOW_HIDDEN != 0) return false;
         if (app.opts.qa or app.opts.shot != null) return !app.qa_blur;
         return flags & c.SDL_WINDOW_INPUT_FOCUS != 0;
@@ -3227,7 +3289,7 @@ pub const App = struct {
             // Janela minimizada ou coberta: ninguém vê. Os eventos da rede são
             // tratados; ao voltar, o SDL avisa e o quadro sai certo.
             const hidden_flags = c.SDL_WINDOW_MINIMIZED | c.SDL_WINDOW_HIDDEN | c.SDL_WINDOW_OCCLUDED;
-            const unseen = c.SDL_GetWindowFlags(app.win.window) & hidden_flags != 0 and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null;
+            const unseen = app.win.flags() & hidden_flags != 0 and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null;
             // A tela de login anima sem parar: no máximo 60 quadros por segundo.
             const login_anim = app.login.visible() and !unseen;
             if (login_anim and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null) {
@@ -3390,6 +3452,11 @@ pub const App = struct {
                     // Da janela flutuante: vai para o contexto dela (nunca fecha o app nem
                     // vai para a bandeja, e não pede quadro da principal).
                     app_flutuante.onEvent(app, &e);
+                } else if (app.win.window == null) {
+                    // Na bandeja, sem janela nem os backends do ImGui: só o que não é dela
+                    // (o layout do teclado do aperte para falar) e o sair.
+                    _ = voz_audio.onSdlEvent(&e);
+                    if (e.type == c.SDL_EVENT_QUIT) running = false;
                 } else {
                     // Sem botão apertado, passar por cima das coisas pode esperar o
                     // próximo quadro (o ImGui guarda onde o mouse está).
@@ -3431,6 +3498,9 @@ pub const App = struct {
                     // Arquivo arrastado para a janela: vai para a bandeja (e o mascote do canto come).
                     if (e.type == c.SDL_EVENT_DROP_POSITION) @import("ui/mascote_pet.zig").onDragOver(now());
                     if (e.type == c.SDL_EVENT_WINDOW_RESIZED) @import("ui/mascote_pet.zig").onResize();
+                    // O lugar e o tamanho para a janela voltar igual da bandeja.
+                    if (e.type == c.SDL_EVENT_WINDOW_RESIZED or e.type == c.SDL_EVENT_WINDOW_MOVED or e.type == c.SDL_EVENT_WINDOW_MAXIMIZED or
+                        e.type == c.SDL_EVENT_WINDOW_RESTORED or e.type == c.SDL_EVENT_WINDOW_ENTER_FULLSCREEN or e.type == c.SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) app.win.remember();
                     if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
                         // Solta em cima do mascote, uma imagem vira um quadro na mão dele (e vai
                         // para a bandeja do mesmo jeito). O ponto vem em pixels da janela.
@@ -3451,6 +3521,10 @@ pub const App = struct {
                 got = c.SDL_PollEvent(&e);
             }
             if (input) pending = 3;
+            // Na bandeja e sem a janela flutuante: a parte da GPU sai (ver `releaseGpu`). Com
+            // ela aberta, fica (ela desenha com o renderizador e as imagens da principal), e
+            // sai quando ela fechar.
+            if (app.in_tray and running and app.win.window != null and !app_flutuante.aberta(app) and !app.restart_wanted and app.opts.shot == null) app.releaseGpu();
             // O robô do Inspetor (clicar e digitar pelo Console ou pelo ctl), um quadro pedido
             // para gravar, ou algo novo nas listas com a janela dele aberta.
             // Um `ctl inspect` esperando quadro também (e o que passou do prazo é respondido).
@@ -3475,7 +3549,7 @@ pub const App = struct {
             app.loginAfterReady();
             if (running) app.syncTray();
 
-            app.images.now_ms = now();
+            app.images.now_ms = images.clockMs(now());
             if (app.images.pump()) {
                 bg_dirty = true;
                 app_flutuante.marcar(app);
@@ -3523,8 +3597,11 @@ pub const App = struct {
                 if (!app_flutuante.talvez(app, now_ms)) continue;
                 pending = 2;
             }
-            const win_flags = c.SDL_GetWindowFlags(app.win.window);
-            if (win_flags & hidden_flags != 0 and running and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null) {
+            const win_flags = app.win.flags();
+            // Sem janela (na bandeja, `releaseGpu`) nunca há quadro, nem no QA: o robô anda
+            // aqui mesmo, sem desenhar.
+            const released = app.win.window == null;
+            if (released or (win_flags & hidden_flags != 0 and running and !app.opts.qa and app.opts.shot == null and !bench and record_dir == null)) {
                 bg_dirty = false;
                 pending = 0;
                 was_active = false;
@@ -3549,6 +3626,11 @@ pub const App = struct {
                     }
                 }
                 _ = app_flutuante.talvez(app, now_ms);
+                if (released and app.opts.qa) {
+                    if ((app.store.ready or app.store.from_cache) and !runner.tick(app)) running = false;
+                    // O laço do QA não dorme: sem o present, um respiro.
+                    c.SDL_Delay(4);
+                }
                 continue;
             }
             hidden_since_ms = 0;
@@ -3571,7 +3653,7 @@ pub const App = struct {
             anim.next_wake_ms = std.math.maxInt(i64);
             anim.clock_wake_ms = std.math.maxInt(i64);
             app.images.next_frame_ms = std.math.maxInt(i64);
-            app.images.drawn_ms = now_ms;
+            app.images.drawn_ms = images.clockMs(now_ms);
             const t0 = c.SDL_GetTicksNS();
             anim.dt = std.math.clamp(@as(f32, @floatFromInt(t0 - last)) / 1e9, 0.001, 1.0 / 30.0);
             last = t0;
@@ -3607,7 +3689,7 @@ pub const App = struct {
             if (app.opts.qa) runner.holdMouse(app);
             // Janela em foco? (Confirmar leitura depende disso; o QA e os prints
             // rodam fora da tela, sem foco de verdade.)
-            app.st.window_focused = if (app.opts.qa or app.opts.shot != null) !app.qa_blur else c.SDL_GetWindowFlags(app.win.window) & c.SDL_WINDOW_INPUT_FOCUS != 0;
+            app.st.window_focused = if (app.opts.qa or app.opts.shot != null) !app.qa_blur else app.win.flags() & c.SDL_WINDOW_INPUT_FOCUS != 0;
             // Configurações que valem para o quadro inteiro.
             const set = &app.st.settings;
             // Claro/escuro (inclusive quando o sistema troca, no modo "seguir").
@@ -4015,7 +4097,7 @@ pub const App = struct {
         app.io.*.DisplayFramebufferScale.x *= ui_scale;
         app.io.*.DisplayFramebufferScale.y *= ui_scale;
         app.fonts.setDensity(app.io.*.DisplayFramebufferScale.x);
-        app.st.window_focused = wl.shot != null or c.SDL_GetWindowFlags(app.win.window) & c.SDL_WINDOW_INPUT_FOCUS != 0;
+        app.st.window_focused = wl.shot != null or app.win.flags() & c.SDL_WINDOW_INPUT_FOCUS != 0;
         const set = &app.st.settings;
         const mode = app.wantedMode();
         if (mode != app.themes.mode) {

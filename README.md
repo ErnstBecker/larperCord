@@ -305,8 +305,10 @@ No magic, just many small decisions:
 5. **Markdown is parsed once**, when the message arrives. The UI only lays out the
    spans, with a **height cache per width**.
 6. **A virtualized list**: binary search for the first visible item, then draw only the screen.
-7. **Memory has ceilings**: 1,500 messages per channel and, by default, 2,000 in total (Settings → Performance changes it), with old ones freed. After a
-   minute in the tray or minimized, images leave memory too, except small ones that were on screen.
+7. **Memory has ceilings**: 1,500 messages per channel and, by default, 2,000 in total (Settings → Performance changes it), with old ones freed. A picture
+   not drawn for a minute leaves memory, GIF frames included. In the tray, the window, the renderer (the GPU context) and every texture go away at once
+   and the memory goes back to the system; only small pictures that were on screen stay, as pixels, so the window comes back whole. After a minute
+   minimized, images leave memory too, except those small ones.
 8. **On Linux, fontconfig gets freed** after fonts are resolved (`FcFini` + `malloc_trim`). Windows has
    no fontconfig: fonts are opened straight from `C:\Windows\Fonts`.
 9. **No blinking cursor**: a cursor blinking on its own would keep the CPU awake.

@@ -536,7 +536,7 @@ fn askToggle(_: *App) void {
     ask("toggle", .{});
 }
 fn hiddenFlag(app: *App) bool {
-    return c.SDL_GetWindowFlags(app.win.window) & c.SDL_WINDOW_HIDDEN != 0;
+    return app.win.flags() & c.SDL_WINDOW_HIDDEN != 0;
 }
 fn inTray(app: *App) bool {
     const a = lastOk() orelse return false;

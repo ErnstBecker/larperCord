@@ -17,6 +17,7 @@ const types = @import("core/types.zig");
 const n = @import("core/notificacao.zig");
 const envio = @import("core/envio.zig");
 const sys = @import("platform/sys.zig");
+const tray = @import("platform/tray.zig");
 const notif_dbus = @import("platform/notif_dbus.zig");
 const notif_win = @import("platform/notif_win.zig");
 const i18n = @import("ui/i18n.zig");
@@ -95,7 +96,9 @@ fn mostrar(app: *App, a: n.Aviso) bool {
 
 fn balao(app: *App, a: n.Aviso) void {
     medidas.pelo_balao += 1;
-    const hwnd = c.SDL_GetPointerProperty(c.SDL_GetWindowProperties(app.win.window), c.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null);
+    // Na bandeja a janela foi embora (App.releaseGpu): o balão vai pela janela escondida
+    // do ícone da bandeja.
+    const hwnd = if (app.win.window) |w| c.SDL_GetPointerProperty(c.SDL_GetWindowProperties(w), c.SDL_PROP_WINDOW_WIN32_HWND_POINTER, null) else tray.nativeWindow();
     sys.toast(hwnd, now(), a.titulo, a.corpo);
 }
 
