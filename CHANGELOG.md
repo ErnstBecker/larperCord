@@ -1,5 +1,14 @@
 # What changed in each version
 
+## 0.6.8
+
+**Inspector (developer tools)**
+- F12 (or Ctrl+Shift+I) opens the Inspector, docked to the right or the bottom with the app fitting in the rest, or floating. Ctrl+Shift+E picks an element on screen: the click picks instead of reaching the app, and a card shows what it is, its size, its color with the theme's name for it, the font, the contrast against the background and the theme file and line that draws it. Both shortcuts can be changed, and it's also in the command palette and in Settings → Advanced.
+- Elements shows the frame as a tree: the theme's layout pieces, and inside each one the boxes, texts, images and clickable areas it drew, with the `.kdl` node's properties, the Dear ImGui id and status, the QA mark in builds with the robot, and how long each component took to draw. It searches by text, component, color or mark.
+- Network lists every HTTP request (Discord's API, images, plugins) with status, time, size and how long it waited on the rate limit; picking one shows the headers, what was sent, the response as a JSON tree and the time of each phase, and copies it as a curl line. Gateway lists every frame of the gateway and the voice gateway, heartbeats hidden, with the content as a tree. Your token is never recorded: no Authorization header, and the token in IDENTIFY and RESUME shows as asterisks.
+- Console shows the log without turning on the debug log, and has a command line (`help`) that can also find, click and type, read the frame's tree, the network and the log, switch themes and take screenshots. Events shows what the interface asked the app, what the app asked the network and what came back. Performance graphs the last 300 frames and each component's cost, GPU work, memory and CPU. State shows the session, the open conversation, the theme's colors and the window.
+- Closed and never opened, it costs nothing. What it records stays in memory only. `--inspect` opens with it recording from the start. Guide: docs/inspector.md. The new Russian texts are in English for now.
+
 ## 0.6.7
 
 **Floating window**

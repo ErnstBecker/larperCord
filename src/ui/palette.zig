@@ -77,6 +77,11 @@ const commands = [_]Command{
             for (ctx.store.channelsOf(0)) |id| ctx.act(.{ .mark_read = id });
         }
     }.f },
+    .{ .pt = "Inspetor (ferramentas de desenvolvedor)", .en = "Inspector (developer tools)", .run = struct {
+        fn f(_: *d.Ctx) void {
+            @import("../inspect/ui.zig").open();
+        }
+    }.f },
     .{ .pt = "Próximo tema", .en = "Next theme", .run = simple(.{ .next_theme = 1 }) },
     .{ .pt = "Tema anterior", .en = "Previous theme", .run = simple(.{ .next_theme = -1 }) },
     .{ .pt = "Modo escuro", .en = "Dark mode", .run = colorMode(0) },

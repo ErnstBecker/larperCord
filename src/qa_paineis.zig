@@ -1323,9 +1323,14 @@ fn changelogReal(_: *App) bool {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const versions = changelog.parse(arena.allocator(), @embedFile("changelog_pt")) catch return false;
-    if (versions.len == 0 or versions[0].sections.len == 0) return false;
+    // A da versão instalada (uma seção da próxima versão, ainda sem número novo no app, fica
+    // para quando ela sair).
+    const cur = for (versions) |v| {
+        if (std.mem.eql(u8, v.name, updater.current)) break v;
+    } else return false;
+    if (cur.sections.len == 0) return false;
     var b: [128]u8 = undefined;
-    for (versions[0].sections) |sec| {
+    for (cur.sections) |sec| {
         if (sec.title.len == 0) continue;
         const k = std.fmt.bufPrint(&b, "changelog-section:{s}", .{sec.title}) catch return false;
         if (qa.find(k) == null) return false;

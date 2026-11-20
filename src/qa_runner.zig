@@ -2908,6 +2908,7 @@ const ops_lsp_quit = [_]Op{expect("pronto", ready)} ++ lsp_ops_quit;
 const qa_bandeja = @import("qa_bandeja.zig");
 const ops_bandeja = [_]Op{expect("pronto", ready)} ++ qa_bandeja.ops;
 const ops_flutuante = [_]Op{expect("pronto", ready)} ++ @import("qa_flutuante.zig").ops;
+const ops_inspetor = [_]Op{expect("pronto", ready)} ++ @import("qa_inspetor.zig").ops;
 const ops_bandeja_sair = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_no_tray;
 const ops_bandeja_menu = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit;
 const ops_bandeja_sair_aberta = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit_open;
@@ -3359,6 +3360,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "lsp-quit", &ops_lsp_quit },
     .{ "bandeja", &ops_bandeja },
     .{ "flutuante", &ops_flutuante },
+    .{ "inspetor", &ops_inspetor },
     .{ "bandeja-sair", &ops_bandeja_sair },
     .{ "bandeja-menu", &ops_bandeja_menu },
     .{ "bandeja-sair-aberta", &ops_bandeja_sair_aberta },
@@ -3821,8 +3823,9 @@ pub const Runner = struct {
                 }
                 r.pos(app, r.target_pos);
             },
-            1 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, true),
-            2 => c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, false),
+            // Escolhendo um elemento no Inspetor, o clique escolhe (como o do mouse de verdade).
+            1 => if (!@import("inspect/ui.zig").robotPress(button)) c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, true),
+            2 => if (!@import("inspect/ui.zig").robotRelease()) c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, false),
             3 => if (double) c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, true),
             4 => if (double) c.ImGuiIO_AddMouseButtonEvent(evIo(app), button, false),
             else => {

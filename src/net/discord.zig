@@ -51,6 +51,8 @@ const envio = @import("../core/envio.zig");
 const gw_budget = @import("gw_budget.zig");
 const saida = @import("saida_servidor.zig");
 const registro = @import("registro_rede.zig");
+const insp = @import("../inspect/registros.zig");
+const insp_curl = @import("../inspect/curl_insp.zig");
 const limits_json = @import("limits_json.zig");
 const debug_log = @import("../platform/debug_log.zig");
 const conta_net = @import("conta_net.zig");
@@ -810,6 +812,7 @@ pub const Gateway = struct {
             var lb: [64]u8 = undefined;
             if (registro.opLine(&lb, payload)) |line| std.log.info("gateway: saiu {s}", .{line});
         }
+        insp.gwOut(.main, payload);
         return true;
     }
 
@@ -903,6 +906,7 @@ pub const Gateway = struct {
         const root = std.json.parseFromSliceLeaky(Value, arena.allocator(), text, .{}) catch return null;
         const parsed_at = timeline.now();
         const op = j.int(j.get(root, "op")) orelse return null;
+        if (insp.gravando()) insp.gw.add(.main, .in, text, op, j.int(j.get(root, "s")), j.str(j.get(root, "t")));
         switch (op) {
             10 => {
                 const d = j.get(root, "d") orelse return null;
@@ -3116,6 +3120,8 @@ pub const Gateway = struct {
         reset_after_ms: ?u32 = null,
         retry_after_ms: ?u32 = null,
         global: bool = false,
+        /// Os cabeçalhos da resposta inteiros, para a aba Rede do Inspetor (só gravando).
+        insp: ?*std.ArrayList(u8) = null,
     };
 
     /// Configurações → Rede com "em tudo": gateway e API também pelo proxy (o
@@ -3171,6 +3177,7 @@ pub const Gateway = struct {
         const total = size * n;
         const rh: *RateInfo = @ptrCast(@alignCast(user.?));
         const line = ptr[0..total];
+        if (rh.insp) |out| insp_curl.responseHeader(out, line);
         const colon = std.mem.indexOfScalar(u8, line, ':') orelse return total;
         const name = std.mem.trim(u8, line[0..colon], " \t");
         const value = std.mem.trim(u8, line[colon + 1 ..], " \r\n\t ");
@@ -3295,6 +3302,8 @@ pub const Gateway = struct {
         var failed_buf: [40]u8 = undefined;
 
         var attempt: u8 = 0;
+        // Para o Inspetor: quanto este pedido esperou o rate limit antes de sair.
+        var waited_ms: i64 = 0;
         while (attempt < 3) : (attempt += 1) {
             // O cliente oficial só dispara a próxima requisição quando o
             // balde do rate limit libera; fazemos o mesmo.
@@ -3311,6 +3320,7 @@ pub const Gateway = struct {
                 // já ter desistido.
                 if (deadline != 0 and until >= deadline) return null;
                 g.sleepServing(@intCast(until - now));
+                waited_ms += until - now;
                 if (g.stopping) return null;
             }
             if (deadline != 0 and nowMs() >= deadline) return null;
@@ -3352,6 +3362,17 @@ pub const Gateway = struct {
             defer c.curl_slist_free_all(headers);
             var rate: RateInfo = .{};
             var resp: Response = .{ .status = 0, .body = .empty };
+            // A aba Rede do Inspetor: o pedido como saiu (sem o Authorization) e, no fim, a resposta.
+            var insp_resp_h: std.ArrayList(u8) = .empty;
+            defer insp_resp_h.deinit(alloc);
+            const insp_id = if (insp.gravando()) blk: {
+                var req_h: std.ArrayList(u8) = .empty;
+                defer req_h.deinit(alloc);
+                insp_curl.requestHeaders(&req_h, headers, web_user_agent);
+                rate.insp = &insp_resp_h;
+                const shown: ?[]const u8 = if (mime != null) "(multipart: arquivos enviados)" else body;
+                break :blk insp.net.begin(.api, method, url, req_h.items, shown, "gateway");
+            } else 0;
             c.curl_easy_reset(h);
             sys.curlTls(h);
             // A URL é fixa (discord.com/api), mas restringir o protocolo
@@ -3382,7 +3403,17 @@ pub const Gateway = struct {
                 _ = c.curl_easy_setopt(h, c.CURLOPT_POSTFIELDS, "");
                 _ = c.curl_easy_setopt(h, c.CURLOPT_POSTFIELDSIZE, @as(c_long, 0));
             }
-            if (c.curl_easy_perform(h) != c.CURLE_OK) {
+            const perform_rc = c.curl_easy_perform(h);
+            if (insp_id != 0) {
+                var e: insp.NetLog.End = .{ .attempt = attempt, .resp_headers = insp_resp_h.items, .waited_ms = @intCast(std.math.clamp(waited_ms, 0, std.math.maxInt(u32))) };
+                insp_curl.endInfo(h, &e);
+                if (perform_rc != c.CURLE_OK) {
+                    e.failed = true;
+                    e.note = std.mem.span(c.curl_easy_strerror(perform_rc));
+                } else e.resp_body = resp.body.items;
+                insp.net.end(insp_id, e);
+            }
+            if (perform_rc != c.CURLE_OK) {
                 resp.body.deinit(alloc);
                 g.notice("sem conexão com a API do Discord", "no connection to the Discord API", .{});
                 return null;
@@ -3431,6 +3462,7 @@ pub const Gateway = struct {
                 }
                 g.notice("o Discord pediu calma: esperando {d} ms", "Discord asked us to slow down: waiting {d} ms", .{wait_ms});
                 g.sleepServing(wait_ms + 100);
+                waited_ms += wait_ms + 100;
                 if (g.stopping) return null;
                 continue;
             }

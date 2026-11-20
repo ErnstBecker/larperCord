@@ -7,6 +7,7 @@
 //! Só baixa de domínios do Discord: um link qualquer na conversa não faz o
 //! app se conectar a outro servidor (o que vazaria o seu IP).
 const std = @import("std");
+const insp = @import("../inspect/registros.zig");
 const c = @import("c");
 const sys = @import("../platform/sys.zig");
 const Queue = @import("../net/queue.zig").Queue;
@@ -953,7 +954,27 @@ pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic
         _ = c.curl_easy_setopt(h, c.CURLOPT_NOPROGRESS, @as(c_long, 0));
         _ = c.curl_easy_setopt(h, c.CURLOPT_XFERINFOFUNCTION, abortCb);
         _ = c.curl_easy_setopt(h, c.CURLOPT_XFERINFODATA, stop);
+        // A aba Rede do Inspetor (só gravando): o pedido, os cabeçalhos da resposta e o tamanho.
+        var insp_h: std.ArrayList(u8) = .empty;
+        defer insp_h.deinit(std.heap.c_allocator);
+        const insp_id = if (insp.gravando()) blk: {
+            var ua_line: [256]u8 = undefined;
+            _ = c.curl_easy_setopt(h, c.CURLOPT_HEADERFUNCTION, inspHeaderCb);
+            _ = c.curl_easy_setopt(h, c.CURLOPT_HEADERDATA, &insp_h);
+            break :blk insp.net.begin(.media, "GET", cur_url, std.fmt.bufPrint(&ua_line, "User-Agent: {s}\n", .{std.mem.span(ua)}) catch "", null, "imagens");
+        } else 0;
         const rc = c.curl_easy_perform(h);
+        if (insp_id != 0) {
+            var e: insp.NetLog.End = .{ .resp_headers = insp_h.items, .attempt = hops };
+            @import("../inspect/curl_insp.zig").endInfo(h, &e);
+            var got: c.curl_off_t = 0;
+            if (c.curl_easy_getinfo(h, c.CURLINFO_SIZE_DOWNLOAD_T, &got) == c.CURLE_OK) e.resp_len = @intCast(@max(got, 0));
+            if (rc != c.CURLE_OK) {
+                e.failed = true;
+                e.note = if (t.stopped or stop.load(.acquire)) "cancelado" else std.mem.span(c.curl_easy_strerror(rc));
+            }
+            insp.net.end(insp_id, e);
+        }
         if (rc != c.CURLE_OK) {
             if (!t.stopped and !stop.load(.acquire)) logFail(url, "erro do curl: {s}", .{std.mem.span(c.curl_easy_strerror(rc))});
             return false;
@@ -988,6 +1009,12 @@ pub fn fetchEx(curl: *?*c.CURL, url: [:0]const u8, sink: Sink, stop: *std.atomic
         }
         return true;
     }
+}
+
+fn inspHeaderCb(ptr: [*c]u8, size: usize, n: usize, user: ?*anyopaque) callconv(.c) usize {
+    const out: *std.ArrayList(u8) = @ptrCast(@alignCast(user.?));
+    @import("../inspect/curl_insp.zig").responseHeader(out, ptr[0 .. size * n]);
+    return size * n;
 }
 
 /// Tamanho final de uma imagem sw×sh cabendo em max_w×max_h (nunca aumenta).
