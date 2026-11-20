@@ -1,5 +1,11 @@
 # What changed in each version
 
+## 0.6.8
+
+**Private pictures**
+- Location and camera details come off photos and videos before they're sent: Settings → Privacy → "Remove location and camera details from photos and videos", on by default. What goes to Discord is a copy without the GPS, the camera model and the rest that hides in the file (Exif and XMP in JPEG, PNG and WebP, a PNG's text and time chunks, the location and camera boxes of an MP4 or MOV from a phone); the picture itself isn't recompressed, and a photo taken sideways stays upright. The file on your computer is never touched: the copy is made right before sending, in a temporary folder only your user can open, and goes away when the send finishes. GIFs, voice messages and other files go as they are, and a broken file goes as it is rather than not at all.
+- Crop and hide parts of a picture before sending: an image in the tray (a screenshot pasted with Ctrl+V, for example) has an Edit button that opens an editor over the window. Drag to crop, with the size shown and handles on the corners and edges; drag over a name, an address or a face to hide it with big pixel blocks or a black bar. The hidden part is gone from the file that's sent, not just covered: the blocks are big and carry a little random noise, and there's no light blur, which can be read back. Undo (Ctrl+Z), Reset, Cancel (Esc) and Done (Enter); Done puts a PNG of the result in the tray in place of the original, with the same spoiler and alt text. Pictures up to 20 megapixels open in the editor, a photo taken sideways opens upright, and pasted and edited images now also live in that private temporary folder. Japanese follows the new texts; in Russian they show in English for now.
+
 ## 0.6.7
 
 **Floating window**

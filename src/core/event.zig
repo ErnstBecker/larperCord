@@ -351,7 +351,9 @@ pub const Command = union(enum) {
     /// `files`: caminhos dos arquivos a enviar (alocados, terminados em 0).
     /// `opts`: silenciosa, sem prévias, menções. `file_opts`: spoiler e texto
     /// alternativo de cada arquivo (alocados; pode ter menos que `files`).
-    send_message: struct { channel: Id, content: []const u8, nonce: u64, reply_to: Id = 0, files: []const [:0]const u8 = &.{}, opts: envio.SendOpts = .{}, file_opts: []const envio.FileOpt = &.{} },
+    /// `strip_metadata`: foto e vídeo vão numa cópia sem localização nem dados da câmera
+    /// (Configurações → Privacidade; net/envio_limpo.zig).
+    send_message: struct { channel: Id, content: []const u8, nonce: u64, reply_to: Id = 0, files: []const [:0]const u8 = &.{}, opts: envio.SendOpts = .{}, file_opts: []const envio.FileOpt = &.{}, strip_metadata: bool = false },
     edit_message: struct { channel: Id, id: Id, content: []const u8 },
     leave_guild: Id,
     /// `text`: cópia do conteúdo, só para a demonstração (o Discord já tem a original).
@@ -622,6 +624,9 @@ pub const Action = union(enum) {
     /// Um arquivo só, para a opção de anexo de um comando de bot (ui/interact.zig).
     pick_file,
     remove_upload: usize,
+    /// O editor da bandeja (ui/editor_imagem.zig) terminou: o arquivo `index` passa a ser
+    /// o PNG editado em `path` (c_allocator, na pasta temporária nossa).
+    replace_upload: struct { index: usize, path: [:0]u8, size: u64, width: u16, height: u16 },
     /// Ctrl+V com uma imagem na área de transferência.
     paste_image,
     /// O áudio gravado na caixa (ui/gravar_audio.zig), já salvo no arquivo

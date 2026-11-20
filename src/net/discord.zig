@@ -48,6 +48,8 @@ const face_json = @import("face_json.zig");
 const member_ask = @import("member_ask.zig");
 const envio_json = @import("envio_json.zig");
 const envio = @import("../core/envio.zig");
+const envio_limpo = @import("envio_limpo.zig");
+const temporarios = @import("../platform/temporarios.zig");
 const gw_budget = @import("gw_budget.zig");
 const saida = @import("saida_servidor.zig");
 const registro = @import("registro_rede.zig");
@@ -4232,6 +4234,17 @@ pub const Gateway = struct {
                     .files = m.file_opts,
                 }) catch return;
                 const path = std.fmt.bufPrint(&path_buf, "/channels/{d}/messages", .{m.channel}) catch return;
+                // Foto e vídeo sem a localização e os dados da câmera: vai uma cópia limpa,
+                // apagada quando o pedido acaba (net/envio_limpo.zig).
+                var limpos: [10]envio_limpo.Preparo = @splat(.original);
+                defer for (limpos[0..nf]) |lp| envio_limpo.soltar(lp);
+                if (m.strip_metadata) for (m.files[0..nf], 0..) |f, i| {
+                    limpos[i] = envio_limpo.preparar(f);
+                    if (limpos[i] == .falhou) {
+                        g.emit(.{ .send_failed = .{ .channel = m.channel, .nonce = m.nonce } });
+                        return g.notice("não deu para tirar a localização de {s}; a mensagem não foi enviada", "couldn't remove the location from {s}; the message wasn't sent", .{names[i]});
+                    }
+                };
                 var mime: ?*c.curl_mime = null;
                 defer if (mime) |mp| c.curl_mime_free(mp);
                 if (m.files.len > 0) {
@@ -4246,14 +4259,20 @@ pub const Gateway = struct {
                         const field = std.fmt.bufPrintSentinel(&nbuf, "files[{d}]", .{i}, 0) catch return;
                         const fp = c.curl_mime_addpart(mp);
                         _ = c.curl_mime_name(fp, field.ptr);
-                        _ = c.curl_mime_filedata(fp, f.ptr);
+                        const limpo = switch (limpos[i]) {
+                            .limpo => |l| l,
+                            else => null,
+                        };
+                        _ = c.curl_mime_filedata(fp, (limpo orelse f).ptr);
                         // O tipo que o navegador mandaria onde o curl não sabe (.ogg: audio/ogg).
                         if (envio_json.partType(names[i])) |t| _ = c.curl_mime_type(fp, t.ptr);
-                        // Spoiler: o nome do arquivo na parte também leva o SPOILER_.
-                        if (i < m.file_opts.len and m.file_opts[i].spoiler) {
+                        // Spoiler: o nome do arquivo na parte também leva o SPOILER_. A cópia
+                        // limpa tem o mesmo nome, mas o nome vai escrito para não depender do curl.
+                        const spoiler = i < m.file_opts.len and m.file_opts[i].spoiler;
+                        if (spoiler or limpo != null) {
                             var sb: [300]u8 = undefined;
                             var zb: [301]u8 = undefined;
-                            const sname = std.fmt.bufPrintSentinel(&zb, "{s}", .{envio_json.uploadName(&sb, names[i], true)}, 0) catch continue;
+                            const sname = std.fmt.bufPrintSentinel(&zb, "{s}", .{envio_json.uploadName(&sb, names[i], spoiler)}, 0) catch continue;
                             _ = c.curl_mime_filename(fp, sname.ptr);
                         }
                     }
@@ -4273,10 +4292,8 @@ pub const Gateway = struct {
                 if (resp.status >= 300) g.emit(failed);
                 if (resp.status == 413) return g.notice("arquivo grande demais para o Discord (limite de 10 MB sem Nitro)", "file too large for Discord (10 MB limit without Nitro)", .{});
                 if (resp.status >= 300) return g.noticeHttp(i18n.tr("não foi possível enviar", "couldn't send"), &resp);
-                // A imagem colada era um arquivo temporário nosso: já foi.
-                for (m.files) |f| if (types.isPastedFile(f)) {
-                    _ = c.unlink(f.ptr);
-                };
+                // A imagem colada (ou editada) era um arquivo temporário nosso: já foi.
+                for (m.files) |f| if (types.isPastedFile(f)) temporarios.apagar(f);
             },
             .edit_message => |m| {
                 var b: std.ArrayList(u8) = .empty;

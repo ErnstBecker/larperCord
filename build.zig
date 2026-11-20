@@ -429,6 +429,10 @@ pub fn build(b: *std.Build) void {
         test_mod.linkSystemLibrary("crypto", .{});
     }
     addDrLibs(b, test_mod, &.{});
+    // O stb_image (vendorizado, sem biblioteca do sistema): os testes de core/metadados.zig e
+    // core/png_escrita.zig abrem de volta o que sai de lá.
+    test_mod.addIncludePath(b.path("third_party/stb"));
+    test_mod.addCSourceFile(.{ .file = b.path("third_party/stb/stb_image.c"), .flags = &.{"-O2"} });
     const tests = b.addTest(.{ .root_module = test_mod });
     b.step("test", "Roda os testes").dependOn(&b.addRunArtifact(tests).step);
 

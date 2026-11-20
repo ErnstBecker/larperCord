@@ -1,5 +1,11 @@
 # O que mudou em cada versão
 
+## 0.6.8
+
+**Imagens privadas**
+- A localização e os dados da câmera saem das fotos e dos vídeos antes de enviar: Configurações → Privacidade → "Tirar a localização e os dados da câmera de fotos e vídeos", ligada de começo. O que vai para o Discord é uma cópia sem o GPS, o modelo da câmera e o resto que fica escondido no arquivo (Exif e XMP no JPEG, no PNG e no WebP, os blocos de texto e de data do PNG, as caixas de lugar e de câmera de um MP4 ou MOV do celular); a imagem em si não é recomprimida, e a foto tirada de lado continua de pé. O arquivo no seu computador nunca muda: a cópia é feita na hora de enviar, numa pasta temporária que só o seu usuário abre, e some quando o envio acaba. GIF, mensagem de voz e os outros arquivos vão como estão, e um arquivo quebrado vai como está em vez de não ir.
+- Cortar e esconder partes de uma imagem antes de enviar: uma imagem na bandeja (um print colado com Ctrl+V, por exemplo) tem o botão Editar, que abre um editor por cima da janela. Arraste para cortar, com o tamanho na tela e alças nos cantos e nas bordas; arraste sobre um nome, um endereço ou um rosto para esconder com blocos grandes ou uma tarja preta. O pedaço escondido some do arquivo que vai, não fica só coberto: os blocos são grandes e levam um pouco de ruído sorteado, e não tem desfoque leve, que dá para ler de volta. Desfazer (Ctrl+Z), Recomeçar, Cancelar (Esc) e Pronto (Enter); Pronto põe na bandeja um PNG do resultado no lugar do original, com o mesmo spoiler e o mesmo texto alternativo. Abrem no editor imagens de até 20 megapixels, a foto tirada de lado abre de pé, e as imagens coladas e editadas agora também ficam nessa pasta temporária. O japonês segue os textos novos; em russo eles aparecem em inglês por enquanto.
+
 ## 0.6.7
 
 **Janela flutuante**

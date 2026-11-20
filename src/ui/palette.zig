@@ -180,6 +180,7 @@ const toggle_names = [_]struct { field: []const u8, pt: []const u8, en: []const 
     .{ .field = "md_preview", .pt = "Prévia do markdown", .en = "Markdown preview" },
     .{ .field = "open_at_unread", .pt = "Abrir na primeira não lida", .en = "Open at the first unread" },
     .{ .field = "send_typing", .pt = "Enviar indicador de digitação", .en = "Send typing indicator" },
+    .{ .field = "strip_metadata", .pt = "Tirar a localização e os dados da câmera de fotos e vídeos", .en = "Remove location and camera details from photos and videos" },
     .{ .field = "rich_presence", .pt = "Compartilhar minha atividade (Rich Presence)", .en = "Share my activity (Rich Presence)" },
     .{ .field = "show_game", .pt = "Mostrar o jogo aberto", .en = "Show the game you're running" },
     .{ .field = "message_log", .pt = "Registro de mensagens", .en = "Message log" },

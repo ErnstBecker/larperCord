@@ -190,6 +190,9 @@ pub const Settings = struct {
 
     // Privacidade (o proxy fica na página Rede)
     send_typing: bool = true,
+    /// Foto e vídeo vão sem a localização e os dados da câmera: a rede manda uma cópia
+    /// limpa (net/envio_limpo.zig) e o arquivo da pessoa não muda.
+    strip_metadata: bool = true,
     /// Mensagens apagadas ficam na tela (marcadas) e as editadas guardam o
     /// texto original. Só neste computador.
     message_log: bool = false,
