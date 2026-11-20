@@ -181,6 +181,9 @@ pub const Gateway = struct {
     pending: std.ArrayList(ev.Command) = .empty,
     /// Estrelas de GIF esperando o fim da volta do laço (`flushFavorites`).
     fav_batch: std.ArrayList(ev.GifFavorite) = .empty,
+    /// A última cópia das configurações gerais (READY, USER_SETTINGS_PROTO_UPDATE,
+    /// respostas do PATCH): as pastas gravam a partir dela (net/pastas_net.zig).
+    settings1: pastas_net.Cache = .{},
     /// Comandos que vão pelo próprio gateway (op 3, 4, 14): só valem depois
     /// do READY/RESUMED (antes, o Discord fecha com 4003 e o pedido se perde).
     held: std.ArrayList(ev.Command) = .empty,
@@ -254,6 +257,11 @@ pub const Gateway = struct {
         g.conta.deinit();
         for (g.fav_batch.items) |f| freeCommand(.{ .gif_favorite = f });
         g.fav_batch.deinit(alloc);
+        g.settings1.deinit();
+    }
+
+    pub fn settingsCache(g: *Gateway) *pastas_net.Cache {
+        return &g.settings1;
     }
 
     const RoleInfo = struct { color: u32, pos: i64 };
@@ -1545,6 +1553,7 @@ pub const Gateway = struct {
             if ((j.int(j.get(st, "type")) orelse 0) != 1) return;
             const b64 = j.str(j.get(st, "proto")) orelse return;
             const partial = if (j.get(d, "partial")) |pv| pv == .bool and pv.bool else false;
+            g.settings1.update(b64, partial);
             conta_net.onProtoUpdate(g, b64, partial);
             if (settings_proto.fromProtoBase64(alloc, b64)) |layout| g.emitFolders(layout) else |_| {}
             return;
@@ -3011,6 +3020,7 @@ pub const Gateway = struct {
         // Pastas e ordem dos servidores: protobuf das configurações (contas
         // atuais) ou o JSON antigo.
         if (j.str(j.get(d, "user_settings_proto"))) |b64| {
+            g.settings1.remember(b64);
             if (settings_proto.fromProtoBase64(alloc, b64)) |layout| g.emitFolders(layout) else |_| {}
         } else if (j.get(d, "user_settings")) |us| if (j.get(us, "guild_folders")) |gf| {
             if (settings_proto.fromJson(alloc, gf)) |layout| g.emitFolders(layout) else |_| {}

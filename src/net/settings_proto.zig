@@ -610,6 +610,31 @@ pub fn patchBody(gpa: std.mem.Allocator, edited: []const u8, version: ?u32) Erro
     return out.toOwnedSlice(gpa);
 }
 
+/// As configurações guardadas (`cached`) com uma atualização parcial por cima
+/// (USER_SETTINGS_PROTO_UPDATE com `partial`): cada campo de cima que veio na
+/// atualização troca o mesmo campo das guardadas, inteiro, como o PATCH faz no
+/// servidor; os outros ficam como estavam, na mesma ordem. Os que vieram vão no fim.
+/// Qualquer parte que não dê para ler inteira dá erro (quem chama esquece a cópia).
+pub fn mergeTop(gpa: std.mem.Allocator, cached: []const u8, update: []const u8) Error![]u8 {
+    var present: std.ArrayList(u64) = .empty;
+    defer present.deinit(gpa);
+    var r: Reader = .{ .buf = update };
+    while (!r.done()) {
+        const sp = try nextSpan(&r);
+        if (std.mem.indexOfScalar(u64, present.items, sp.field) == null) try present.append(gpa, sp.field);
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.ensureTotalCapacity(gpa, cached.len + update.len);
+    var c: Reader = .{ .buf = cached };
+    while (!c.done()) {
+        const sp = try nextSpan(&c);
+        if (std.mem.indexOfScalar(u64, present.items, sp.field) == null) try out.appendSlice(gpa, cached[sp.start..sp.end]);
+    }
+    try out.appendSlice(gpa, update);
+    return out.toOwnedSlice(gpa);
+}
+
 /// O que o PATCH levou (o campo 14 de `settings` em base64), lido de volta: para o
 /// QA e os testes conferirem os bytes que iriam para o Discord.
 pub fn decodePatch(gpa: std.mem.Allocator, body: []const u8) !Layout {
@@ -1058,4 +1083,37 @@ test "editar sem vazamento quando falta memória" {
     const bytes = try testSettings(a, &range);
     defer a.free(bytes);
     try std.testing.checkAllAllocationFailures(a, editAndFree, .{bytes});
+}
+
+test "atualização parcial por cima das configurações guardadas" {
+    const a = std.testing.allocator;
+    var range: [2]usize = undefined;
+    const bytes = try testSettings(a, &range);
+    defer a.free(bytes);
+    // Outro aparelho: versions novo e as pastas (só um servidor solto).
+    var up: TestEnc = .{ .gpa = a };
+    defer up.deinit();
+    try up.fieldBytes(1, "\x18\x09");
+    var gf: TestEnc = .{ .gpa = a };
+    defer gf.deinit();
+    try gf.fieldBytes(1, "\x0a\x08\x05\x00\x00\x00\x00\x00\x00\x00");
+    try up.fieldBytes(14, gf.out.items);
+    const merged = try mergeTop(a, bytes, up.out.items);
+    defer a.free(merged);
+    const l = try fromProto(a, merged);
+    defer l.deinit(a);
+    try std.testing.expectEqual(@as(usize, 1), l.folders.len);
+    try std.testing.expectEqualSlices(u64, &.{5}, l.folders[0].guilds);
+    // O resto que não veio continua, byte a byte (o campo 8 com o maior varint, o 5000…).
+    try std.testing.expect(std.mem.indexOf(u8, merged, bytes[range[1]..]) != null);
+    try std.testing.expect(std.mem.endsWith(u8, merged, up.out.items));
+    // Nada a mais: o tamanho é o de antes sem o versions e o 14, mais a atualização.
+    var nested: TestEnc = .{ .gpa = a };
+    defer nested.deinit();
+    try nested.fieldVarint(1, 300);
+    try nested.fieldBytes(3, "\x08\x01");
+    const old_versions = 2 + nested.out.items.len;
+    try std.testing.expectEqual(bytes.len - old_versions - (range[1] - range[0]) + up.out.items.len, merged.len);
+    try std.testing.expectError(error.Truncated, mergeTop(a, bytes, "\x72\x05\x01"));
+    try std.testing.expectError(error.Truncated, mergeTop(a, bytes[0 .. bytes.len - 1], up.out.items));
 }

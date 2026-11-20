@@ -613,7 +613,10 @@ pub const Gateway = struct {
         g.emit(.{ .my_limits = .{ .guild = guildId(quarantine_guild), .member_flags = 1 << 7 } });
         try g.demoActivities();
         try g.demoFaces();
-        g.emit(.{ .guild_folders = try demoFolders() });
+        // As configurações vão junto no READY (net/fake_pastas.zig): o app guarda a cópia.
+        const folders = try demoFolders();
+        try @import("fake_pastas.zig").ready(folders);
+        g.emit(.{ .guild_folders = folders });
         try g.demoThreads();
         try g.demoEmojis();
         try g.demoStickers();

@@ -53,7 +53,18 @@ fn index(id: Id) usize {
 /// A pasta criada arrastando (o id é sorteado).
 var new_id: u64 = 0;
 var patches0: u64 = 0;
+var requests0: u64 = 0;
+var gets0: u64 = 0;
+var calls0: u64 = 0;
 var bulks0: u64 = 0;
+
+/// Conta os pedidos de agora em diante (cada conferência é desde aqui).
+fn resetCounts() void {
+    patches0 = load(&fp.sent.patches);
+    requests0 = load(&fp.sent.requests);
+    gets0 = load(&fp.sent.gets);
+    calls0 = load(&fp.sent.patch_calls);
+}
 
 fn markFmt(buf: []u8, comptime fmt: []const u8, args: anytype) []const u8 {
     return std.fmt.bufPrint(buf, fmt, args) catch "";
@@ -109,14 +120,23 @@ fn load(a: anytype) u64 {
     return a.load(.acquire);
 }
 
-/// O último PATCH, decodificado de volta, é igual ao que a conta guardou e ao que a
-/// barra mostra; levou a versão das configurações; e o resto da conta não mudou.
+/// Cada gravação foi um pedido só (o PATCH, sem GET); o último PATCH, decodificado de
+/// volta, é igual ao que a conta guardou e ao que a barra mostra; levou a versão que a
+/// conta tinha; e o resto da conta não mudou.
 fn patchMatches(app: *App, n: u64) bool {
     if (load(&fp.sent.patches) != patches0 + n) return false;
+    if (load(&fp.sent.requests) != requests0 + n or load(&fp.sent.gets) != gets0) return false;
     if (app.store.folder_ops.items.len > 0 or app_pastas.waiting() > 0) return false;
+    return lastBodyMatches(app);
+}
+
+fn lastBodyMatches(app: *App) bool {
     const len = load(&fp.sent.body_len);
     const body = fp.sent.body[0..len];
-    if (std.mem.indexOf(u8, body, "\"required_data_version\":7") == null) return false;
+    var vb: [48]u8 = undefined;
+    // A conta sobe a versão a cada gravação: o PATCH levou a de antes dele.
+    const want = std.fmt.bufPrint(&vb, "\"required_data_version\":{d}", .{load(&fp.sent.version) - 1}) catch return false;
+    if (std.mem.indexOf(u8, body, want) == null) return false;
     const l = settings_proto.decodePatch(std.heap.c_allocator, body) catch return false;
     defer l.deinit(std.heap.c_allocator);
     // Sem `guild_positions` na conta: o PATCH também não leva.
@@ -126,7 +146,7 @@ fn patchMatches(app: *App, n: u64) bool {
 }
 
 fn snapshot(_: *App) void {
-    patches0 = load(&fp.sent.patches);
+    resetCounts();
     bulks0 = load(&gw.sent.bulks);
 }
 
@@ -195,7 +215,7 @@ fn folderMoved(app: *App) bool {
 /// Três mudanças seguidas, no mesmo instante: a primeira sai na hora, as outras duas
 /// esperam e saem juntas.
 fn burst(app: *App) void {
-    patches0 = load(&fp.sent.patches);
+    resetCounts();
     app_pastas.handle(app, .{ .move_guild = .{ .guild = G(0), .where = .end } });
     app_pastas.handle(app, .{ .move_guild = .{ .guild = G(1), .where = .end } });
     app_pastas.handle(app, .{ .move_guild = .{ .guild = G(0), .where = .end } });
@@ -211,18 +231,40 @@ fn burstDone(app: *App) bool {
 }
 
 fn removed(app: *App) bool {
-    return barIs(app, "9 7 [77:2,8,4] [78:6,3,5] 1 0") and patchMatches(app, 3) and app.store.folderById(new_id) == null;
+    return barIs(app, "9 7 [77:2,8,4] [78:6,3,5] 1 0") and patchMatches(app, 1) and app.store.folderById(new_id) == null;
+}
+
+/// Outro aparelho grava algo logo antes do PATCH: o Discord recusa com as configurações
+/// como estão, e as mudanças vão de novo sobre elas, sem GET. Dois pedidos.
+fn staleNext(_: *App) void {
+    resetCounts();
+    fp.sent.stale_next.store(1, .release);
+}
+fn staleRetried(app: *App) bool {
+    return barIs(app, "[N:9,7] [77:2,8,4] [78:6,3,5] 0 1") and load(&fp.sent.patches) == patches0 + 1 and
+        load(&fp.sent.patch_calls) == calls0 + 2 and load(&fp.sent.requests) == requests0 + 2 and load(&fp.sent.gets) == gets0 and
+        app.store.folder_ops.items.len == 0 and lastBodyMatches(app);
+}
+/// Sem a cópia das configurações (um READY na forma antiga): um GET antes do PATCH.
+fn forgetNext(_: *App) void {
+    resetCounts();
+    fp.sent.forget_next.store(1, .release);
+}
+fn fetchedFirst(app: *App) bool {
+    return barIs(app, "[N:9,7] [77:2,8,4] [78:6,3,5] 1 0") and load(&fp.sent.patches) == patches0 + 1 and
+        load(&fp.sent.gets) == gets0 + 1 and load(&fp.sent.requests) == requests0 + 2 and
+        app.store.folder_ops.items.len == 0 and lastBodyMatches(app);
 }
 
 fn failNext(app: *App) void {
-    patches0 = load(&fp.sent.patches);
+    resetCounts();
     app.st.toast.len = 0;
     fp.sent.fail_next.store(1, .release);
 }
 fn failedBack(app: *App) bool {
     // A barra volta ao que a conta tem, com o aviso do erro, e nada foi gravado.
     return barIs(app, "9 7 [77:2,8,4] [78:6,3,5] 1 0") and app.store.folder_ops.items.len == 0 and
-        load(&fp.sent.patches) == patches0 and load(&fp.sent.fail_next) == 0 and
+        load(&fp.sent.patches) == patches0 and load(&fp.sent.fail_next) == 0 and load(&fp.sent.requests) == requests0 + 1 and
         app.st.toast.until_ms > gw.nowMs() and std.mem.indexOf(u8, app.st.toast.text(), "não deu para salvar as pastas") != null;
 }
 
@@ -265,7 +307,7 @@ fn appendField(out: *std.ArrayList(u8), field: u64, data: []const u8) !void {
 /// parcial, só com o campo 14.
 fn remoteReorder(app: *App) void {
     const ca = std.heap.c_allocator;
-    patches0 = load(&fp.sent.patches);
+    resetCounts();
     const moved = pastas.applyAll(ca, app.store.folders_server, &.{}, &.{.{ .move_folder = .{ .folder = 78, .where = .start } }}) catch return;
     defer pastas.freeFolders(ca, moved);
     // Um cliente que guarda o que não conhece: os campos desconhecidos da conta vão junto.
@@ -360,7 +402,16 @@ pub const ops = [_]Op{
     expect("a primeira sai na hora, as outras esperam", burstFirst),
     .{ .expect = .{ .name = "as outras duas numa gravação só, um segundo depois", .check = burstDone, .timeout_ms = 3000 } },
 
+    s("pastas: um pedido por gravação"),
+    run(staleNext),
+    drag(tG(0), tG(1), 0.08),
+    expect("outro aparelho gravou no meio: recusado e refeito sobre a resposta, dois pedidos", staleRetried),
+    run(forgetNext),
+    drag(tG(1), tG(0), 0.08),
+    expect("sem a cópia das configurações: GET e PATCH", fetchedFirst),
+
     s("pastas: desfazer a pasta"),
+    run(snapshot),
     rclickDyn(tNew),
     click("menu:Remover pasta"),
     expect("os servidores ficam soltos no lugar dela, gravado", removed),
