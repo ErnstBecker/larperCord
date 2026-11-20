@@ -25,6 +25,9 @@
 - On Windows, notifications are real toasts with the buttons and a text box next to Reply, registered for your user only (no administrator), without changing how the window groups with the Start menu shortcut. If Windows doesn't take them, they go out as the tray balloon as before. Reminders, calls, updates and plugin notifications keep coming, now with a click that brings the window up.
 - The QA has a new suite with a private D-Bus session and a fake notification server inside the app's own binary: KDE-style and GNOME-style servers, mark as read and an inline reply with the window in the tray, a reply blocked by slowmode, the click with the activation token, the server going away, and no session at all.
 
+**Connection**
+- Signing in and every reconnect no longer wait up to a second before sending IDENTIFY or RESUME. When Discord's first message came in together with the answer to the connection, the app only noticed it a second later.
+
 ## 0.6.7
 
 **Floating window**

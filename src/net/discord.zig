@@ -554,6 +554,11 @@ pub const Gateway = struct {
         g.frame.clearRetainingCapacity();
         g.zout.clearRetainingCapacity();
         g.shrinkBuffers();
+        // O HELLO pode vir junto com a resposta do aperto de mão: aí o curl já o leu para
+        // dentro dele, o socket não tem mais nada e o poll lá embaixo só acordaria no teto
+        // de 1 s (o IDENTIFY ou o RESUME saíam 1 s atrasados a cada conexão).
+        g.serviceWs();
+        if (g.ws_end) |e| return e;
 
         var cmds: std.ArrayList(ev.Command) = .empty;
         defer cmds.deinit(alloc);

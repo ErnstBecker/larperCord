@@ -25,6 +25,9 @@
 - No Windows, as notificações são avisos de verdade com os botões e uma caixa de texto ao lado de Responder, registrados só para o seu usuário (sem administrador), sem mudar como a janela se agrupa com o atalho do menu Iniciar. Se o Windows não aceitar, elas saem como o balão da bandeja de antes. Lembretes, chamadas, atualizações e as notificações dos plugins continuam chegando, agora com um clique que traz a janela.
 - O QA ganhou uma bateria com uma sessão D-Bus particular e um servidor de notificações de mentira dentro do próprio binário do app: servidores como o do KDE e o do GNOME, marcar como lida e a resposta pela notificação com a janela na bandeja, uma resposta barrada pelo modo lento, o clique com a ficha de ativação, o servidor que some e nenhuma sessão.
 
+**Conexão**
+- Entrar e cada reconexão não esperam mais até um segundo antes de mandar o IDENTIFY ou o RESUME. Quando a primeira mensagem do Discord chegava junto com a resposta da conexão, o app só a via um segundo depois.
+
 ## 0.6.7
 
 **Janela flutuante**
