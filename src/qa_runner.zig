@@ -951,12 +951,6 @@ fn profileNoteSaved(app: *App) bool {
 fn movedToGaming(app: *App) bool {
     return app.store.voiceChannelOf(1001, app.st.guild) == ch(14);
 }
-fn backToMadrugada(app: *App) bool {
-    return app.store.voiceChannelOf(1001, app.st.guild) == ch(13) and @import("ui/arrastar_voz.zig").arraste == null;
-}
-fn noProfile(app: *App) bool {
-    return app.st.popup != .profile;
-}
 fn disconnected1001(app: *App) bool {
     const cur = app.store.voiceChannelOf(1001, app.st.guild);
     return cur == 0 or app.store.channel(cur).?.info.guild != app.st.guild;
@@ -2320,13 +2314,6 @@ const ops = [_]Op{
     click("menu:Mover para…"),
     click("menu:Jogando"),
     expect("botão direito → Mover para… muda a pessoa de call", movedToGaming),
-    // Arrastar (ui/arrastar_voz.zig): soltar fora de um canal não muda nada; soltar no canal
-    // de voz move, com o mesmo pedido do menu.
-    .{ .drag = .{ .from = .{ .mark = "voice-member:500015:1001" }, .to = .{ .mark = "composer" } } },
-    expect("arrastar e soltar fora de um canal de voz não move ninguém", movedToGaming),
-    .{ .drag = .{ .from = .{ .mark = "voice-member:500015:1001" }, .to = .{ .mark = "channel:500014" } } },
-    expect("arrastar a pessoa até outro canal de voz move ela para lá", backToMadrugada),
-    expect("e não abre o perfil de ninguém", noProfile),
     .{ .rclick = .{ .mark = "member:1001" } },
     click("menu:Desconectar da call"),
     expect("Desconectar da call tira a pessoa da call", disconnected1001),
@@ -2926,6 +2913,7 @@ const ops_ctl = [_]Op{expect("pronto", ready)} ++ @import("qa_ctl.zig").ops;
 const ops_imagem = [_]Op{expect("pronto", ready)} ++ @import("qa_imagem.zig").ops;
 const ops_imagem_tema = [_]Op{expect("pronto", ready)} ++ @import("qa_imagem.zig").ops_tema;
 const ops_inspetor = [_]Op{expect("pronto", ready)} ++ @import("qa_inspetor.zig").ops;
+const ops_arrastar = [_]Op{expect("pronto", ready)} ++ @import("qa_arrastar.zig").ops;
 const ops_notificacao = [_]Op{expect("pronto", ready)} ++ @import("qa_notificacao.zig").ops;
 const ops_bandeja_sair = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_no_tray;
 const ops_bandeja_menu = [_]Op{ expect("pronto", ready), click("guild:500000") } ++ qa_bandeja.ops_quit;
@@ -3382,6 +3370,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "imagem", &ops_imagem },
     .{ "imagem-tema", &ops_imagem_tema },
     .{ "inspetor", &ops_inspetor },
+    .{ "arrastar", &ops_arrastar },
     .{ "notificacao", &ops_notificacao },
     .{ "bandeja-sair", &ops_bandeja_sair },
     .{ "bandeja-menu", &ops_bandeja_menu },
