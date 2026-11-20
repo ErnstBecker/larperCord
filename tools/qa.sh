@@ -76,6 +76,8 @@ QA_SUITE=imagem run "imagem privada" $bin --qa --theme classico
 QA_SUITE=imagem-tema QA_PREFIX=papel-claro-ja- run "imagem (japonês, 125%)" $bin --qa --theme papel --mode claro --lang ja
 # Inspetor (F12): elementos, escolher na tela, comandos, rede, gateway, eventos, fechar.
 QA_SUITE=inspetor run "inspetor" $bin --qa --theme classico
+# Arrastar alguém da call para outro canal de voz (e soltar fora não mover).
+QA_SUITE=arrastar run "arrastar para mover" $bin --qa --theme classico
 # Notificações que respondem: um dbus-daemon particular e o servidor de mentira do próprio
 # binário (o do KDE, com caixa de texto, e o do GNOME), sem nunca usar a sessão de quem roda.
 QA_SUITE=notificacao run "notificações" $bin --qa --theme classico
