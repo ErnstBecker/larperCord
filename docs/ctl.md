@@ -37,6 +37,10 @@ is handled between the app's events, without drawing anything.
 | `watch` | Keeps running and prints one line each time the status, the unread counts or the call change |
 | `watch --waybar` | The same, as JSON for a waybar custom module |
 | `watch --format text` | The same, as a plain line (polybar and others) |
+| `mentions [n]` | The unread DMs and mentions (what the Inbox shows), newest first, as JSON: who, where, the start of the message and a `link` for `open` |
+| `channels` | Servers, text and voice channels and DMs with their unread counts, as JSON, for a launcher (`open <id>` opens one) |
+| `presence <online\|idle\|dnd\|invisible>` | Changes your status |
+| `volume <id> <0-200>` | Someone's volume in the call, in percent, like the mixer |
 | `inspect <command>` | Runs a command of the [Inspector](inspector.md): `inspect find <text>`, `inspect tree`, `inspect el <selector>`, `inspect net`, `inspect log`, `inspect shot file.png`… (`inspect help` lists them). Clicking and typing only work in demo mode or with "Let ctl click and type" on in the Inspector's Console |
 | `help` | The list of commands |
 
@@ -50,10 +54,13 @@ reason goes to standard error). The voice commands answer with the new state
 ```json
 {"connected": true, "connection": "ready", "demo": false,
  "account": {"id": "123456789012345678", "name": "you"},
- "window": "shown",
+ "window": "shown", "presence": "online", "latency_ms": 42,
  "voice": {"muted": false, "deafened": false, "mode": "push_to_talk", "ptt_held": false,
            "call": {"state": "connected", "channel_id": "…", "channel": "General",
-                    "guild_id": "…", "guild": "My server"}},
+                    "guild_id": "…", "guild": "My server",
+                    "members": [{"id": "…", "name": "Ana", "avatar": "https://cdn.discordapp.com/avatars/…",
+                                 "speaking": true, "muted": false, "deafened": false,
+                                 "self": false, "volume": 1.0}]}},
  "unread": {"mentions": 3, "dms": 1, "channels": 5}}
 ```
 
@@ -61,7 +68,9 @@ IDs are strings, like in Discord's own API. `call` is `null` outside a call, and
 `guild` are `null` in a DM call. `connection` is `ready`, `connecting`, `reconnecting`,
 `offline`, `failed`, `rejected` or `logged_out` (the login screen). `mentions` counts like
 Discord's red badge (DMs included); `dms` and `channels` count unread conversations and text
-channels, leaving out the ones you muted.
+channels, leaving out the ones you muted. `presence` is `online`, `idle`, `dnd` or `invisible`, and
+`latency_ms` is the gateway heartbeat (0 until it's measured). In a call, `members` lists who is in
+it, with who is talking right now, so `watch` sends a line when someone starts or stops talking.
 
 ## Push to talk from a shortcut
 

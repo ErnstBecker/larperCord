@@ -248,6 +248,23 @@ pub const Call = struct {
     /// 0 numa DM.
     guild_id: u64 = 0,
     guild: []const u8 = "",
+    /// Quem está na call, com quem fala agora (a barra anima as fotos).
+    members: []const Member = &.{},
+};
+
+/// Alguém na call.
+pub const Member = struct {
+    id: u64,
+    name: []const u8,
+    /// O endereço da foto no CDN do Discord (vazio: sem foto, fica a inicial).
+    avatar: []const u8 = "",
+    speaking: bool = false,
+    muted: bool = false,
+    deafened: bool = false,
+    /// A nossa própria linha.
+    self: bool = false,
+    /// O volume dela no mixer (1 = 100%).
+    volume: f32 = 1,
 };
 
 /// O app numa foto: o que o `status` responde e o que o `watch` acompanha.
@@ -268,6 +285,10 @@ pub const Snapshot = struct {
     mentions: u32 = 0,
     dms: u32 = 0,
     channels: u32 = 0,
+    /// "online", "idle", "dnd" ou "invisible".
+    presence: []const u8 = "online",
+    /// A latência do heartbeat do gateway (0: ainda não mediu).
+    latency_ms: u32 = 0,
 
     /// Na call, com a tecla do aperte para falar apertada e o microfone aberto.
     pub fn talking(s: *const Snapshot) bool {
@@ -304,6 +325,9 @@ pub fn statusJson(out: *std.ArrayList(u8), gpa: std.mem.Allocator, s: *const Sna
     }
     try out.appendSlice(gpa, ",\"window\":");
     try jsonx.writeString(out, gpa, s.window);
+    try out.appendSlice(gpa, ",\"presence\":");
+    try jsonx.writeString(out, gpa, s.presence);
+    try out.print(gpa, ",\"latency_ms\":{d}", .{s.latency_ms});
     try out.print(gpa, ",\"voice\":{{\"muted\":{s},\"deafened\":{s},\"mode\":\"{s}\",\"ptt_held\":{s},\"call\":", .{
         boolStr(s.muted), boolStr(s.deafened), if (s.ptt_mode) "push_to_talk" else "voice_activity", boolStr(s.ptt_held),
     });
@@ -318,11 +342,46 @@ pub fn statusJson(out: *std.ArrayList(u8), gpa: std.mem.Allocator, s: *const Sna
         try idStr(out, gpa, call.guild_id);
         try out.appendSlice(gpa, ",\"guild\":");
         if (call.guild_id == 0) try out.appendSlice(gpa, "null") else try jsonx.writeString(out, gpa, call.guild);
-        try out.append(gpa, '}');
+        try out.appendSlice(gpa, ",\"members\":[");
+        for (call.members, 0..) |m, i| {
+            if (i > 0) try out.append(gpa, ',');
+            try memberJson(out, gpa, &m);
+        }
+        try out.appendSlice(gpa, "]}");
     } else try out.appendSlice(gpa, "null");
     try out.appendSlice(gpa, "},\"unread\":");
     try unreadJson(out, gpa, s);
     try out.append(gpa, '}');
+}
+
+pub fn memberJson(out: *std.ArrayList(u8), gpa: std.mem.Allocator, m: *const Member) !void {
+    try out.appendSlice(gpa, "{\"id\":");
+    try idStr(out, gpa, m.id);
+    try out.appendSlice(gpa, ",\"name\":");
+    try jsonx.writeString(out, gpa, m.name);
+    try out.appendSlice(gpa, ",\"avatar\":");
+    try jsonx.writeString(out, gpa, m.avatar);
+    try out.print(gpa, ",\"speaking\":{s},\"muted\":{s},\"deafened\":{s},\"self\":{s},\"volume\":{d:.2}}}", .{
+        boolStr(m.speaking), boolStr(m.muted), boolStr(m.deafened), boolStr(m.self), m.volume,
+    });
+}
+
+/// `presence` aceita o nome que a pessoa conhece ("invisible") e o do Discord ("offline").
+pub fn parsePresence(s: []const u8) ?enum { online, idle, dnd, offline } {
+    const eq = std.ascii.eqlIgnoreCase;
+    if (eq(s, "online")) return .online;
+    if (eq(s, "idle") or eq(s, "away")) return .idle;
+    if (eq(s, "dnd")) return .dnd;
+    if (eq(s, "invisible") or eq(s, "offline")) return .offline;
+    return null;
+}
+
+/// O volume de `volume <id> <n>`: em porcentagem (0 a 200, como o mixer).
+pub fn parseVolume(s: []const u8) ?f32 {
+    const t = std.mem.trimEnd(u8, s, "%");
+    const n = std.fmt.parseFloat(f32, t) catch return null;
+    if (!(n >= 0 and n <= 200)) return null;
+    return n / 100;
 }
 
 // --- waybar e a linha de texto ------------------------------------------------------
@@ -586,7 +645,7 @@ test "JSON do status e das não lidas" {
     };
     try statusJson(&out, gpa, &s);
     try testing.expectEqualStrings(
-        \\{"connected":true,"connection":"ready","demo":false,"account":{"id":"1000","name":"Vo\"cê"},"window":"shown","voice":{"muted":true,"deafened":false,"mode":"push_to_talk","ptt_held":false,"call":{"state":"connected","channel_id":"500014","channel":"Geral","guild_id":"7","guild":"larperCord"}},"unread":{"mentions":3,"dms":1,"channels":5}}
+        \\{"connected":true,"connection":"ready","demo":false,"account":{"id":"1000","name":"Vo\"cê"},"window":"shown","presence":"online","latency_ms":0,"voice":{"muted":true,"deafened":false,"mode":"push_to_talk","ptt_held":false,"call":{"state":"connected","channel_id":"500014","channel":"Geral","guild_id":"7","guild":"larperCord","members":[]}},"unread":{"mentions":3,"dms":1,"channels":5}}
     , out.items);
     // O JSON é válido (o std lê de volta).
     const parsed = try std.json.parseFromSlice(std.json.Value, gpa, out.items, .{});
@@ -595,7 +654,7 @@ test "JSON do status e das não lidas" {
     // Na tela de login: sem conta e sem call; numa DM, sem servidor.
     try statusJson(&out, gpa, &.{});
     try testing.expectEqualStrings(
-        \\{"connected":false,"connection":"logged_out","demo":false,"account":null,"window":"shown","voice":{"muted":false,"deafened":false,"mode":"voice_activity","ptt_held":false,"call":null},"unread":{"mentions":0,"dms":0,"channels":0}}
+        \\{"connected":false,"connection":"logged_out","demo":false,"account":null,"window":"shown","presence":"online","latency_ms":0,"voice":{"muted":false,"deafened":false,"mode":"voice_activity","ptt_held":false,"call":null},"unread":{"mentions":0,"dms":0,"channels":0}}
     , out.items);
     out.clearRetainingCapacity();
     try statusJson(&out, gpa, &.{ .connected = true, .call = .{ .state = "connecting", .channel_id = 9, .channel = "ana" } });
@@ -603,6 +662,29 @@ test "JSON do status e das não lidas" {
     out.clearRetainingCapacity();
     try unreadJson(&out, gpa, &s);
     try testing.expectEqualStrings("{\"mentions\":3,\"dms\":1,\"channels\":5}", out.items);
+}
+
+test "quem está na call, o status e o volume" {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(testing.allocator);
+    const gpa = testing.allocator;
+    const members = [_]Member{
+        .{ .id = 1001, .name = "Ana", .avatar = "https://cdn.discordapp.com/avatars/1001/a.png", .speaking = true },
+        .{ .id = 1000, .name = "Eu", .muted = true, .self = true, .volume = 1.5 },
+    };
+    try statusJson(&out, gpa, &.{ .connected = true, .presence = "dnd", .latency_ms = 42, .call = .{ .state = "connected", .channel_id = 9, .channel = "Call", .guild_id = 7, .guild = "g", .members = &members } });
+    try testing.expect(std.mem.indexOf(u8, out.items, "\"presence\":\"dnd\",\"latency_ms\":42") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items, "\"members\":[{\"id\":\"1001\",\"name\":\"Ana\",\"avatar\":\"https://cdn.discordapp.com/avatars/1001/a.png\",\"speaking\":true,\"muted\":false,\"deafened\":false,\"self\":false,\"volume\":1.00}") != null);
+    try testing.expect(std.mem.indexOf(u8, out.items, "\"self\":true,\"volume\":1.50}]") != null);
+    const parsed = try std.json.parseFromSlice(std.json.Value, gpa, out.items, .{});
+    parsed.deinit();
+    try testing.expectEqual(@as(?@TypeOf(parsePresence("x").?), .offline), parsePresence("invisible"));
+    try testing.expectEqual(@as(?@TypeOf(parsePresence("x").?), .idle), parsePresence("IDLE"));
+    try testing.expectEqual(@as(?@TypeOf(parsePresence("x").?), null), parsePresence("busy"));
+    try testing.expectEqual(@as(?f32, 0.5), parseVolume("50"));
+    try testing.expectEqual(@as(?f32, 2), parseVolume("200%"));
+    try testing.expectEqual(@as(?f32, null), parseVolume("201"));
+    try testing.expectEqual(@as(?f32, null), parseVolume("-1"));
 }
 
 test "estado principal para os ícones" {

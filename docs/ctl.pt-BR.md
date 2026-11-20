@@ -38,6 +38,10 @@ meio dos eventos do app, sem desenhar nada.
 | `watch` | Fica rodando e escreve uma linha cada vez que o status, as não lidas ou a call mudam |
 | `watch --waybar` | O mesmo, em JSON para um módulo custom do waybar |
 | `watch --format text` | O mesmo, numa linha de texto (polybar e outros) |
+| `mentions [n]` | As DMs não lidas e as menções (o que a Caixa de entrada mostra), da mais nova para a mais velha, em JSON: quem, onde, o começo da mensagem e um `link` para o `open` |
+| `channels` | Servidores, canais de texto e de voz e DMs com as não lidas, em JSON, para um lançador (`open <id>` abre) |
+| `presence <online\|idle\|dnd\|invisible>` | Troca o seu status |
+| `volume <id> <0-200>` | O volume de alguém na call, em porcentagem, como o mixer |
 | `inspect <comando>` | Roda um comando do [Inspetor](inspector.pt-BR.md): `inspect find <texto>`, `inspect tree`, `inspect el <seletor>`, `inspect net`, `inspect log`, `inspect shot arquivo.png`… (`inspect help` lista todos). Clicar e digitar só funcionam no modo demonstração ou com "Deixar o ctl clicar e digitar" ligado no Console do Inspetor |
 | `help` | A lista de comandos |
 
@@ -51,10 +55,13 @@ O `status` é assim (numa linha só; aqui espalhado):
 ```json
 {"connected": true, "connection": "ready", "demo": false,
  "account": {"id": "123456789012345678", "name": "voce"},
- "window": "shown",
+ "window": "shown", "presence": "online", "latency_ms": 42,
  "voice": {"muted": false, "deafened": false, "mode": "push_to_talk", "ptt_held": false,
            "call": {"state": "connected", "channel_id": "…", "channel": "Geral",
-                    "guild_id": "…", "guild": "Meu servidor"}},
+                    "guild_id": "…", "guild": "Meu servidor",
+                    "members": [{"id": "…", "name": "Ana", "avatar": "https://cdn.discordapp.com/avatars/…",
+                                 "speaking": true, "muted": false, "deafened": false,
+                                 "self": false, "volume": 1.0}]}},
  "unread": {"mentions": 3, "dms": 1, "channels": 5}}
 ```
 
@@ -62,7 +69,9 @@ Os IDs vêm como texto, como na API do Discord. `call` é `null` fora de call, e
 `guild` são `null` numa call de DM. `connection` é `ready`, `connecting`, `reconnecting`,
 `offline`, `failed`, `rejected` ou `logged_out` (a tela de login). `mentions` conta como o número
 vermelho do Discord (com as DMs); `dms` e `channels` contam as conversas e os canais de texto não
-lidos, sem os que você silenciou.
+lidos, sem os que você silenciou. `presence` é `online`, `idle`, `dnd` ou `invisible`, e
+`latency_ms` é o heartbeat do gateway (0 até medir). Na call, `members` lista quem está nela, com
+quem fala agora: o `watch` manda uma linha quando alguém começa ou para de falar.
 
 ## Aperte para falar por um atalho
 

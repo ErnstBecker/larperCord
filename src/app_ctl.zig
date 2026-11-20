@@ -101,6 +101,10 @@ pub const commands = [_]Command{
     .{ .name = "hide", .run = hide, .redraw = true, .pt = "esconde na bandeja (sem bandeja, minimiza)", .en = "hides to the tray (without a tray, minimizes)" },
     .{ .name = "toggle", .run = toggle, .redraw = true, .pt = "mostra ou esconde, como o clique no ícone da bandeja", .en = "shows or hides, like clicking the tray icon" },
     .{ .name = "open", .run = open, .redraw = true, .usage = "<link | id>", .pt = "abre um link do Discord ou o ID de um canal", .en = "opens a Discord link or a channel ID" },
+    .{ .name = "mentions", .run = mentions, .usage = "[n]", .pt = "as DMs não lidas e as menções, com o começo de cada mensagem, em JSON", .en = "unread DMs and mentions, with the start of each message, as JSON" },
+    .{ .name = "channels", .run = channels, .pt = "servidores, canais e DMs com as não lidas, em JSON (para um lançador)", .en = "servers, channels and DMs with unread counts, as JSON (for a launcher)" },
+    .{ .name = "presence", .run = presence, .redraw = true, .usage = "<online|idle|dnd|invisible>", .pt = "troca o seu status", .en = "changes your status" },
+    .{ .name = "volume", .run = volume, .redraw = true, .usage = "<id> <0-200>", .pt = "o volume de alguém na call, em porcentagem (como o mixer)", .en = "someone's volume in the call, in percent (like the mixer)" },
     .{ .name = "inspect", .run = inspect, .redraw = true, .usage = "<comando>", .pt = "o Inspetor: achar e clicar elementos, a árvore, a rede, o log… (inspect help)", .en = "the Inspector: find and click elements, the tree, the network, the log… (inspect help)" },
     .{ .name = "watch", .run = watch, .usage = "[--waybar | --format json|waybar|text]", .pt = "uma linha a cada mudança (status, não lidas, call)", .en = "one line per change (status, unread, call)" },
     .{ .name = "help", .run = help, .pt = "esta lista", .en = "this list" },
@@ -219,9 +223,9 @@ pub fn notify(app: *App) void {
 fn key(app: *App) u64 {
     const st = &app.st;
     const store = &app.store;
-    var mentions: u32 = 0;
+    var mention_sum: u32 = 0;
     var it = st.filtros.mentions.valueIterator();
-    while (it.next()) |v| mentions +%= v.*;
+    while (it.next()) |v| mention_sum +%= v.*;
     const parts = [_]u64{
         store.rev,
         @backingInt(store.connection),
@@ -235,12 +239,32 @@ fn key(app: *App) u64 {
         @intFromBool(st.deafened),
         @intFromBool(st.settings.voice_ptt),
         @intFromBool(voz_audio.pttKey()),
-        mentions,
+        mention_sum,
         st.muted_channels.count(),
         @intFromBool(app.in_tray),
         c.SDL_GetWindowFlags(app.win.window) & (c.SDL_WINDOW_HIDDEN | c.SDL_WINDOW_MINIMIZED),
+        st.settings.my_status,
+        // O ping muda a cada heartbeat; de 10 em 10 ms basta para a barra.
+        store.latency_ms / 10,
+        speakingKey(app),
     };
     return std.hash.Wyhash.hash(1, std.mem.asBytes(&parts)) | 1;
+}
+
+/// Quem está na call e quem fala agora, num número (o `watch` manda uma linha quando muda).
+fn speakingKey(app: *App) u64 {
+    const ch = app.st.voice orelse return 0;
+    const cs = app.store.channel(ch) orelse return 0;
+    const now: i64 = @intCast(c.SDL_GetTicks());
+    var h = std.hash.Wyhash.init(ch);
+    for (cs.voice_members.items) |uid| {
+        h.update(std.mem.asBytes(&uid));
+        const on = app.store.isSpeaking(uid, now);
+        h.update(std.mem.asBytes(&on));
+        const f = app.store.voiceFlags(uid);
+        h.update(std.mem.asBytes(&f));
+    }
+    return h.final();
 }
 
 fn render(s: *const proto.Snapshot, fmt: proto.Format, out: *std.ArrayList(u8)) !void {
@@ -338,12 +362,53 @@ pub fn snapshot(app: *App) proto.Snapshot {
         .channel = channelName(app, ch),
         .guild_id = st.voice_guild,
         .guild = if (store.guild(st.voice_guild)) |g| g.name else "",
+        .members = callMembers(app, ch, st.voice_guild),
     };
+    s.presence = switch (@as(types.Status, @enumFromInt(std.math.clamp(st.settings.my_status, 0, 3)))) {
+        .online => "online",
+        .idle => "idle",
+        .dnd => "dnd",
+        .offline => "invisible",
+    };
+    s.latency_ms = store.latency_ms;
     const u = countUnread(app);
     s.mentions = u.mentions;
     s.dms = u.dms;
     s.channels = u.channels;
     return s;
+}
+
+/// Quem está na call (até 32), com as fotos: os textos ficam aqui até a próxima foto.
+var members_buf: [32]proto.Member = undefined;
+var avatar_bufs: [32][160]u8 = undefined;
+
+fn callMembers(app: *App, ch: Id, guild: Id) []const proto.Member {
+    const cs = app.store.channel(ch) orelse return &.{};
+    const now: i64 = @intCast(c.SDL_GetTicks());
+    var n: usize = 0;
+    for (cs.voice_members.items) |uid| {
+        if (n == members_buf.len) break;
+        const f = app.store.voiceFlags(uid);
+        members_buf[n] = .{
+            .id = uid,
+            .name = app.store.nameIn(guild, uid) orelse if (app.store.user(uid)) |u| u.name else "?",
+            .avatar = avatarUrl(app, &avatar_bufs[n], guild, uid),
+            .speaking = app.store.isSpeaking(uid, now),
+            .muted = f.muted(),
+            .deafened = f.deafened(),
+            .self = uid == app.store.me,
+            .volume = app.st.volumes.volume(uid),
+        };
+        n += 1;
+    }
+    return members_buf[0..n];
+}
+
+/// A foto no CDN (a do perfil do servidor, se houver), como a interface pede.
+fn avatarUrl(app: *App, buf: []u8, guild: Id, uid: Id) []const u8 {
+    const server = if (app.store.face(guild, uid)) |f| f.avatar else null;
+    const hash = server orelse (if (app.store.user(uid)) |u| u.avatar else null) orelse return "";
+    return @import("ui/widgets.zig").cdnUrl(buf, .avatar, uid, hash);
 }
 
 // --- Comandos ----------------------------------------------------------------------------
@@ -489,6 +554,108 @@ fn watch(app: *App, args: *const proto.Args, out: *Out) Error!void {
 
 fn help(_: *App, _: *const proto.Args, out: *Out) Error!void {
     try writeHelp(out.list(), alloc);
+}
+
+const inbox = @import("core/inbox.zig");
+const jsonx = @import("net/jsonx.zig");
+
+/// As DMs não lidas e as menções (o que a Caixa de entrada mostra), da mais nova para a
+/// mais velha: quem, onde, o começo da mensagem e o link para abrir com o `open`.
+fn mentions(app: *App, args: *const proto.Args, out: *Out) Error!void {
+    const want: usize = if (args.len > 1) std.fmt.parseInt(usize, args.list[1], 10) catch return out.fail(.usage, "mentions [n]") else 20;
+    var model: inbox.Model = .{};
+    inbox.build(&app.store, &app.st.muted_channels, &app.st.filtros, &model);
+    const Item = struct { channel: Id, guild: Id, id: Id };
+    var items: std.ArrayList(Item) = .empty;
+    defer items.deinit(alloc);
+    for (model.slice()) |g| for (g.ids()) |id| try items.append(alloc, .{ .channel = g.channel, .guild = g.guild, .id = id });
+    std.mem.sortUnstable(Item, items.items, {}, struct {
+        fn gt(_: void, a: Item, b: Item) bool {
+            return a.id > b.id;
+        }
+    }.gt);
+    const l = out.list();
+    try l.append(alloc, '[');
+    var n: usize = 0;
+    for (items.items) |it| {
+        if (n == want) break;
+        const found = inbox.lookup(&app.store, it.channel, it.id) orelse continue;
+        const m = found.m;
+        if (n > 0) try l.append(alloc, ',');
+        n += 1;
+        var pb: [400]u8 = undefined;
+        var ab: [160]u8 = undefined;
+        try l.print(alloc, "{{\"kind\":\"{s}\",\"id\":\"{d}\",\"channel_id\":\"{d}\",\"channel\":", .{ if (it.guild == 0) "dm" else "mention", it.id, it.channel });
+        try jsonx.writeString(l, alloc, channelName(app, it.channel));
+        try l.appendSlice(alloc, ",\"guild\":");
+        if (app.store.guild(it.guild)) |g| try jsonx.writeString(l, alloc, g.name) else try l.appendSlice(alloc, "null");
+        try l.print(alloc, ",\"author_id\":\"{d}\",\"author\":", .{m.msg.author});
+        try jsonx.writeString(l, alloc, app.store.nameIn(it.guild, m.msg.author) orelse if (app.store.user(m.msg.author)) |u| u.name else "?");
+        try l.appendSlice(alloc, ",\"avatar\":");
+        try jsonx.writeString(l, alloc, avatarUrl(app, &ab, it.guild, m.msg.author));
+        try l.appendSlice(alloc, ",\"text\":");
+        try jsonx.writeString(l, alloc, inbox.preview(&pb, &app.store, m));
+        try l.print(alloc, ",\"time_ms\":{d},\"link\":\"https://discord.com/channels/", .{types.snowflakeTime(it.id)});
+        if (it.guild == 0) try l.appendSlice(alloc, "@me") else try l.print(alloc, "{d}", .{it.guild});
+        try l.print(alloc, "/{d}/{d}\"}}", .{ it.channel, it.id });
+    }
+    try l.append(alloc, ']');
+}
+
+/// Servidores, canais de texto e de voz e DMs, com as não lidas: o que um lançador
+/// precisa para pular para qualquer conversa (o `open` com o id abre).
+fn channels(app: *App, _: *const proto.Args, out: *Out) Error!void {
+    const l = out.list();
+    try l.append(alloc, '[');
+    var first = true;
+    // As DMs primeiro, na ordem da lista do app; depois cada servidor.
+    var gi: usize = 0;
+    while (gi <= app.store.guilds.items.len) : (gi += 1) {
+        const gid: Id = if (gi == 0) 0 else app.store.guilds.items[gi - 1].id;
+        const gname: []const u8 = if (gi == 0) "" else app.store.guilds.items[gi - 1].name;
+        for (app.store.channelsOf(gid)) |id| {
+            const cs = app.store.channel(id) orelse continue;
+            const kind: []const u8 = switch (cs.info.kind) {
+                .text => if (gid == 0) (if (cs.info.group) "group" else "dm") else "text",
+                .voice => "voice",
+                .forum => "forum",
+                .category => continue,
+            };
+            if (!first) try l.append(alloc, ',');
+            first = false;
+            try l.print(alloc, "{{\"id\":\"{d}\",\"kind\":\"{s}\",\"name\":", .{ id, kind });
+            try jsonx.writeString(l, alloc, channelName(app, id));
+            try l.appendSlice(alloc, ",\"guild\":");
+            if (gid == 0) try l.appendSlice(alloc, "null") else try jsonx.writeString(l, alloc, gname);
+            try l.print(alloc, ",\"guild_id\":\"{d}\",\"unread\":{s},\"mentions\":{d},\"muted\":{s}}}", .{
+                gid,
+                if (cs.info.unread) "true" else "false",
+                app.st.filtros.count(id),
+                if (app.st.muted_channels.contains(id)) "true" else "false",
+            });
+        }
+    }
+    try l.append(alloc, ']');
+}
+
+fn presence(app: *App, args: *const proto.Args, out: *Out) Error!void {
+    if (args.len < 2) return out.fail(.usage, "presence <online|idle|dnd|invisible>");
+    const p = proto.parsePresence(args.list[1]) orelse return out.fail(.usage, "presence <online|idle|dnd|invisible>");
+    app.handle(.{ .set_status = switch (p) {
+        .online => .online,
+        .idle => .idle,
+        .dnd => .dnd,
+        .offline => .offline,
+    } });
+    try out.print("{{\"presence\":\"{s}\"}}", .{args.list[1]});
+}
+
+fn volume(app: *App, args: *const proto.Args, out: *Out) Error!void {
+    if (args.len < 3) return out.fail(.usage, "volume <id> <0-200>");
+    const uid = std.fmt.parseInt(Id, args.list[1], 10) catch return out.fail(.usage, "volume <id> <0-200>");
+    const v = proto.parseVolume(args.list[2]) orelse return out.fail(.usage, "volume <id> <0-200>");
+    app.handle(.{ .set_voice_volume = .{ .user = uid, .volume = v } });
+    try out.print("{{\"id\":\"{d}\",\"volume\":{d:.2}}}", .{ uid, v });
 }
 
 // --- inspect: os comandos do Inspetor (src/inspect/comandos.zig) ---------------------------
