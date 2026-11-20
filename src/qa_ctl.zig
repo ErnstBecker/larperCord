@@ -74,7 +74,7 @@ const Ask = struct {
     ok: bool = false,
     code: ?proto.Code = null,
     open_err: ?ctl.Conn.OpenError = null,
-    body: [16 * 1024]u8 = undefined,
+    body: [64 * 1024]u8 = undefined,
     len: usize = 0,
 
     fn line(a: *const Ask) []const u8 {
@@ -420,6 +420,77 @@ fn barSays(comptime alt: []const u8) fn (*App) bool {
 
 // --- Mudo e surdo na call ---------------------------------------------------------------------
 
+// --- call, volume, status, menções e canais ---------------------------------------
+
+const ana: Id = 1001;
+fn statusMembers(app: *App) bool {
+    const v = lastJson() orelse return false;
+    const call = (v.object.get("voice") orelse return false).object.get("call") orelse return false;
+    if (call != .object) return false;
+    const members = (call.object.get("members") orelse return false).array.items;
+    var eu = false;
+    var ana_in = false;
+    for (members) |m| {
+        const id = std.fmt.parseInt(Id, m.object.get("id").?.string, 10) catch continue;
+        if (id == app.store.me and m.object.get("self").?.bool) eu = true;
+        if (id == ana) ana_in = std.mem.startsWith(u8, m.object.get("avatar").?.string, "https://cdn.discordapp.com/avatars/") or m.object.get("avatar").?.string.len == 0;
+    }
+    return eu and ana_in and members.len >= 2 and (v.object.get("presence") orelse return false) == .string;
+}
+fn askVolume(_: *App) void {
+    ask("volume {d} 150", .{ana});
+}
+fn volumeSet(app: *App) bool {
+    _ = lastOk() orelse return false;
+    return @abs(app.st.volumes.volume(ana) - 1.5) < 0.01;
+}
+fn askVolumeBad(_: *App) void {
+    ask("volume {d} 300", .{ana});
+}
+fn lastUsage(_: *App) bool {
+    return lastErr(.usage);
+}
+fn askPresence(_: *App) void {
+    ask("presence dnd", .{});
+}
+fn presenceDnd(app: *App) bool {
+    _ = lastOk() orelse return false;
+    return app.st.settings.my_status == @backingInt(types.Status.dnd);
+}
+fn askPresenceBack(_: *App) void {
+    ask("presence online", .{});
+}
+fn presenceOnline(app: *App) bool {
+    _ = lastOk() orelse return false;
+    return app.st.settings.my_status == @backingInt(types.Status.online);
+}
+fn askMentions(_: *App) void {
+    ask("mentions 10", .{});
+}
+fn mentionsJson(_: *App) bool {
+    const a = lastOk() orelse return false;
+    const v = parseJson(a.text()) orelse return false;
+    if (v != .array or v.array.items.len == 0) return false;
+    const first = v.array.items[0].object;
+    return std.mem.startsWith(u8, (first.get("link") orelse return false).string, "https://discord.com/channels/") and first.get("text") != null and first.get("author") != null;
+}
+fn askChannels(_: *App) void {
+    ask("channels", .{});
+}
+fn channelsJson(app: *App) bool {
+    const a = lastOk() orelse return false;
+    const v = parseJson(a.text()) orelse return false;
+    if (v != .array) return false;
+    var voice = false;
+    var dm = false;
+    for (v.array.items) |it| {
+        const kind = it.object.get("kind").?.string;
+        if (std.mem.eql(u8, kind, "voice")) voice = true;
+        if (std.mem.eql(u8, kind, "dm")) dm = true;
+    }
+    return voice and dm and v.array.items.len >= app.store.channelsOf(0).len;
+}
+
 fn join(app: *App) void {
     app.handle(.{ .select_guild = g0 });
     if (app.st.voice != call0) app.handle(.{ .toggle_voice = call0 });
@@ -745,6 +816,22 @@ pub const ops = [_]Op{
     expect("undeafen: ouve, continua mudo (como o botão)", voiceIs(true, false)),
     run(askToggleMute),
     expect("toggle-mute desmuta", voiceIs(false, false)),
+
+    s("ctl: quem está na call, volume, status, menções e canais"),
+    run(askStatus),
+    expect("status lista quem está na call, com a gente e a foto de quem tem", statusMembers),
+    run(askVolume),
+    expect("volume muda o volume da pessoa no mixer", volumeSet),
+    run(askVolumeBad),
+    expect("volume fora de 0 a 200: ERR usage", lastUsage),
+    run(askPresence),
+    expect("presence dnd troca o status (e o status diz)", presenceDnd),
+    run(askPresenceBack),
+    expect("presence online volta", presenceOnline),
+    run(askMentions),
+    expect("mentions devolve as não lidas em JSON, com o link de cada uma", mentionsJson),
+    run(askChannels),
+    expect("channels devolve servidores, canais e DMs em JSON", channelsJson),
 
     s("ctl: aperte para falar"),
     run(askPttDown),
