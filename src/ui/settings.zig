@@ -1039,6 +1039,8 @@ fn page(p: *Page, previews: []const Preview) void {
             p.title(i18n.tr("Notificações", "Notifications"));
             p.note(i18n.tr("Para mensagens diretas e menções, quando você não está olhando a conversa.", "For direct messages and mentions, when you're not looking at the conversation."));
             p.toggle(i18n.tr("Notificações na área de trabalho", "Desktop notifications"), i18n.tr("Só com a janela fora de foco ou escondida na bandeja.", "Only while the window is unfocused or hidden in the tray."), &s.desktop_notifs);
+            p.toggleIf(i18n.tr("Responder pela notificação", "Reply from the notification"), i18n.tr("As notificações de mensagens ganham os botões Marcar como lida e Responder, que funcionam com a janela na bandeja. Onde a notificação tem caixa de texto (KDE Plasma, Windows), a resposta sai dali mesmo; nos outros, Responder abre a conversa com a resposta pronta.", "Message notifications get Mark as read and Reply buttons, which work with the window in the tray. Where the notification has a text box (KDE Plasma, Windows), the reply goes out from there; elsewhere, Reply opens the conversation ready to reply."), &s.notif_reply, s.desktop_notifs);
+            if (s.desktop_notifs and s.notif_reply) if (semBotoes()) |porque| p.note(porque);
             p.toggle(i18n.tr("Piscar na barra de tarefas", "Flash taskbar"), i18n.tr("A janela chama atenção até você voltar para ela.", "The window asks for attention until you come back."), &s.taskbar_flash);
             p.toggle(i18n.tr("Som de mensagem nova", "New message sound"), i18n.tr("Um aviso curto com mensagem direta e menção, também com a janela fora de foco ou na bandeja. Não toca na conversa que você está olhando nem em Não perturbe.", "A short cue for direct messages and mentions, also while the window is unfocused or in the tray. Silent for the conversation you're looking at and in Do Not Disturb."), &s.message_sound);
             // O som em si: o mesmo da página Voz (embutido, arquivo seu, volume e Ouvir).
@@ -1155,6 +1157,22 @@ fn page(p: *Page, previews: []const Preview) void {
         .atualizacoes => @import("settings_update.zig").draw(p),
         .novidades => @import("settings_update.zig").changelog(p),
         .sobre => about(p),
+    }
+}
+
+/// Os botões das notificações não aparecem aqui: por quê. Nulo: aparecem (ou nenhuma
+/// notificação saiu ainda para saber).
+fn semBotoes() ?[]const u8 {
+    if (sys.windows) {
+        if (!@import("../platform/notif_win.zig").recusado()) return null;
+        return i18n.tr("O Windows não aceitou as notificações com botões: elas saem como antes, sem botões.", "Windows didn't accept notifications with buttons: they go out as before, without buttons.");
+    } else {
+        const dbus = @import("../platform/notif_dbus.zig");
+        return switch (dbus.estado()) {
+            .pronto => if (dbus.caps().acoes) null else i18n.tr("O servidor de notificações deste sistema não mostra botões.", "This system's notification server doesn't show buttons."),
+            .sem, .sem_servidor => i18n.tr("Sem um servidor de notificações pelo D-Bus, elas saem pelo notify-send, sem botões.", "Without a notification server on D-Bus, they go out through notify-send, without buttons."),
+            .parado, .conectando => null,
+        };
     }
 }
 

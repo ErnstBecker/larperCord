@@ -162,7 +162,8 @@ jobs:
           - temas:bolhas,zen,papel
           - temas:escritorio,cupertino
     steps:
-      - run: pacman -Syu --noconfirm --needed git sdl3 curl zlib freetype2 fontconfig libwebp opus noto-fonts noto-fonts-emoji python weston xorg-server-xvfb
+      # dbus: o dbus-daemon particular da bateria das notificações.
+      - run: pacman -Syu --noconfirm --needed git sdl3 curl zlib freetype2 fontconfig libwebp opus noto-fonts noto-fonts-emoji python weston xorg-server-xvfb dbus
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:

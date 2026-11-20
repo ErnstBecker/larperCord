@@ -67,6 +67,9 @@ QA_SUITE=perfil run "perfil do servidor" $bin --qa --theme classico
 # Tela da call: a grade com cada um, os botões, ir e voltar, muita gente e a DM.
 QA_SUITE=call run "tela da call" $bin --qa --theme classico
 QA_SUITE=flutuante run "janela flutuante" $bin --qa --theme classico
+# Notificações que respondem: um dbus-daemon particular e o servidor de mentira do próprio
+# binário (o do KDE, com caixa de texto, e o do GNOME), sem nunca usar a sessão de quem roda.
+QA_SUITE=notificacao run "notificações" $bin --qa --theme classico
 # Op 8: os membros dos autores das páginas (DM nunca, no máximo um por servidor a cada
 # 30 s, as páginas se juntando, sem repetir), e o apelido e a cor do cargo numa
 # mensagem antiga depois da resposta.

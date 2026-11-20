@@ -26,6 +26,8 @@ pub const Wake = enum(i32) {
     mascot = 11,
     /// Hora de olhar os processos atrás do jogo aberto (app_presenca.zig).
     jogo = 12,
+    /// Clique, botão ou resposta numa notificação do sistema (app_notificacao.zig).
+    notificacao = 13,
 };
 
 /// O renderizador que abriu (para Configurações → Desempenho) e se o escolhido nas
