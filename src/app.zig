@@ -43,6 +43,7 @@ const theme_mod = @import("theme/theme.zig");
 const plugin_host = @import("plugins/host.zig");
 const mentions = @import("core/mentions.zig");
 const envio = @import("core/envio.zig");
+const temporarios = @import("platform/temporarios.zig");
 const autocomplete = @import("ui/autocomplete.zig");
 const ime = @import("ui/ime.zig");
 const interact = @import("ui/interact.zig");
@@ -674,6 +675,9 @@ pub const App = struct {
         @import("ui/video.zig").shutdown();
         @import("ui/voice_msg.zig").shutdown();
         @import("ui/gravar_audio.zig").shutdown();
+        // O editor de imagem aberto, e o que sobrou na pasta temporária nossa (a rede já parou).
+        @import("ui/editor_imagem.zig").fechar();
+        temporarios.limparTudo();
         // Exportação ou "Salvar" andando: cancela e espera (só fica o .part, que elas apagam).
         @import("ui/exportar.zig").shutdown();
         // (Por último, lá dentro: as threads de mídia e de vídeo usam o libcurl.)
@@ -754,16 +758,16 @@ pub const App = struct {
     // --- Anexos ----------------------------------------------------------------
 
     /// Limite do Discord para quem não tem Nitro.
-    const max_upload: u64 = 10 * 1024 * 1024;
+    const max_upload = envio.max_upload;
 
     fn clearUploads(app: *App) void {
         for (app.st.uploads.items) |u| dropUpload(u);
         app.st.uploads.clearRetainingCapacity();
     }
 
-    /// Tira um arquivo da bandeja. O de imagem colada era só nosso: apaga.
+    /// Tira um arquivo da bandeja. O de imagem colada ou editada era só nosso: apaga.
     fn dropUpload(u: @import("ui/state.zig").Upload) void {
-        if (types.isPastedFile(u.path)) _ = c.unlink(u.path.ptr);
+        if (types.isPastedFile(u.path)) temporarios.apagar(u.path);
         std.heap.c_allocator.free(u.path);
         if (u.alt.len > 0) std.heap.c_allocator.free(u.alt);
     }
@@ -793,6 +797,8 @@ pub const App = struct {
             if (c.stbi_info_from_memory(@ptrCast(data), @intCast(size), &w, &h, &comp) != 0 and w > 0 and h > 0) {
                 up.width = @intCast(@min(w, 65535));
                 up.height = @intCast(@min(h, 65535));
+                // Imagem parada: ganha o Editar (cortar e esconder pedaços).
+                up.editavel = @import("core/imagem_edicao.zig").podeEditar(@as([*]const u8, @ptrCast(data))[0..size]);
             }
         }
         st.uploads.append(app.gpa, up) catch std.heap.c_allocator.free(z);
@@ -870,18 +876,18 @@ pub const App = struct {
         c.SDL_ShowOpenFileDialog(pickedCb, app, app.win.window, &filters, filters.len, null, false);
     }
 
-    /// Imagem colada: vai para um arquivo temporário e entra na bandeja.
+    /// Imagem colada: vai para um arquivo temporário (na pasta só nossa) e entra na bandeja.
     fn pasteImage(app: *App) void {
         const kind = platform.clipboardImage() orelse return;
         var size: usize = 0;
         const data = c.SDL_GetClipboardData(kind.mime, &size) orelse return;
         defer c.SDL_free(data);
-        const dir = sys.tempDir();
-        var pbuf: [512]u8 = undefined;
+        var nbuf: [96]u8 = undefined;
+        var pbuf: [1100]u8 = undefined;
         app.paste_n += 1;
         // O nome do arquivo aparece na bandeja e vai junto para o Discord.
-        const path = i18n.fmtZ(&pbuf, "{s}/larpercord-colado-{d}-{d}.{s}", "{s}/larpercord-pasted-{d}-{d}.{s}", .{ dir, c.getpid(), app.paste_n, kind.ext });
-        if (path.len == 0) return;
+        const nome = i18n.fmt(&nbuf, "larpercord-colado-{d}-{d}.{s}", "larpercord-pasted-{d}-{d}.{s}", .{ c.getpid(), app.paste_n, kind.ext });
+        const path = temporarios.novo(&pbuf, nome) orelse return app.st.showToast(now(), true, "não consegui colar a imagem", "couldn't paste the image", .{});
         const saved = if (kind.bitmap) blk: {
             const surface = c.SDL_LoadBMP_IO(c.SDL_IOFromConstMem(data, size), true) orelse {
                 std.log.warn("colar: bitmap de {d} bytes não abriu: {s}", .{ size, std.mem.span(c.SDL_GetError()) });
@@ -1650,7 +1656,7 @@ pub const App = struct {
         // Para o "tentar de novo" mandar igual.
         app.store.outbox.put(app.gpa, app.st.nonce, opts, file_opts) catch {};
         const copy = ca.dupe(u8, out_text) catch return ups.len > 0;
-        app.cmd(.{ .send_message = .{ .channel = ch, .content = copy, .nonce = app.st.nonce, .reply_to = reply_to, .files = files, .opts = opts, .file_opts = file_opts } });
+        app.cmd(.{ .send_message = .{ .channel = ch, .content = copy, .nonce = app.st.nonce, .reply_to = reply_to, .files = files, .opts = opts, .file_opts = file_opts, .strip_metadata = app.st.settings.strip_metadata } });
         send_limits.noteSent(&app.store, ch, now());
         return true;
     }
@@ -1947,10 +1953,16 @@ pub const App = struct {
                 // As opções do envio que falhou (silenciosa, spoiler…) vão de novo.
                 const sent_as = app.store.outbox.get(r.nonce);
                 const fopts = if (sent_as) |e| envio.dupeFileOpts(ca, e.files) catch &.{} else &.{};
-                app.cmd(.{ .send_message = .{ .channel = r.channel, .content = copy, .nonce = r.nonce, .reply_to = m.msg.reply_to, .files = files, .opts = if (sent_as) |e| e.opts else .{}, .file_opts = fopts } });
+                app.cmd(.{ .send_message = .{ .channel = r.channel, .content = copy, .nonce = r.nonce, .reply_to = m.msg.reply_to, .files = files, .opts = if (sent_as) |e| e.opts else .{}, .file_opts = fopts, .strip_metadata = st.settings.strip_metadata } });
                 send_limits.noteSent(&app.store, r.channel, now());
             },
-            .discard_message => |r| app.store.discardPending(r.channel, r.nonce),
+            .discard_message => |r| {
+                // A imagem colada ou editada que não foi era só nossa.
+                if (app.store.pendingByNonce(r.channel, r.nonce)) |m| for (m.msg.attachments) |att| {
+                    if (std.mem.startsWith(u8, att.url, "file://") and types.isPastedFile(att.url[7..])) temporarios.apagar(att.url[7..]);
+                };
+                app.store.discardPending(r.channel, r.nonce);
+            },
             .open_friends => {
                 st.guild = 0;
                 st.friends = true;
@@ -2373,6 +2385,22 @@ pub const App = struct {
             .remove_upload => |i| if (i < st.uploads.items.len) {
                 dropUpload(st.uploads.items[i]);
                 _ = st.uploads.orderedRemove(i);
+            },
+            .replace_upload => |r| {
+                // Saiu da bandeja enquanto o editor gravava: o PNG novo não serve para nada.
+                if (r.index >= st.uploads.items.len) {
+                    temporarios.apagar(r.path);
+                    return std.heap.c_allocator.free(r.path);
+                }
+                const u = &st.uploads.items[r.index];
+                // A versão anterior, se era nossa (colada, ou de uma edição antes), já foi.
+                if (types.isPastedFile(u.path)) temporarios.apagar(u.path);
+                std.heap.c_allocator.free(u.path);
+                u.path = r.path;
+                u.size = r.size;
+                u.width = r.width;
+                u.height = r.height;
+                u.editavel = true;
             },
             .paste_image => app.pasteImage(),
             .send_recording => |path| app.sendRecording(path),

@@ -89,6 +89,9 @@ The official client is a whole browser dressed up as an app. On the same PC:
 - **Sending options**: choose whether a reply pings its author, send silently (`@silent`), without link
   previews or without pinging anyone, and mark each file as a spoiler or give it alt text. Vote in
   polls and see who voted, see who reacted, and page through more than 50 pins.
+- **Private pictures**: photos and videos go without their location and camera details (Settings → Privacy,
+  on by default; the file on your computer isn't touched), and an image in the tray can be cropped or have
+  parts hidden with big pixel blocks or a black bar before it's sent.
 - **Channel tabs**, a command palette with fuzzy search (`Ctrl+K` / `Ctrl+Shift+P`: channels, DMs,
   servers, themes, status, mark as read and the toggles), keyboard shortcuts and optional
   vim-style navigation (`j`/`k`, `gg`/`G`, `J`/`K` switches channel, `/` searches).

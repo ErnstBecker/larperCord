@@ -67,6 +67,9 @@ test {
     _ = @import("core/reply_preview.zig");
     _ = @import("core/exportar.zig");
     _ = @import("core/salvar.zig");
+    _ = @import("core/png_escrita.zig");
+    _ = @import("core/metadados.zig");
+    _ = @import("core/imagem_edicao.zig");
     _ = @import("platform/pastas.zig");
     _ = @import("core/search_query.zig");
     _ = @import("core/busca_indice.zig");

@@ -90,6 +90,9 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
 - **Opções de envio**: escolha se a resposta menciona o autor, mande em silêncio (`@silent`), sem prévia
   de links ou sem mencionar ninguém, e marque cada arquivo como spoiler ou dê um texto alternativo. Vote
   em enquetes e veja quem votou, veja quem reagiu e passe por mais de 50 fixadas.
+- **Imagens privadas**: fotos e vídeos vão sem a localização e os dados da câmera (Configurações →
+  Privacidade, ligado de começo; o arquivo no seu computador não muda), e uma imagem na bandeja pode ser
+  cortada ou ter partes escondidas com blocos grandes ou uma tarja preta antes de ir.
 - **Abas de canal**, paleta de comandos com busca aproximada (`Ctrl+K` / `Ctrl+Shift+P`: canais, DMs,
   servidores, temas, status, marcar como lido e as opções liga/desliga), atalhos de teclado e
   navegação estilo vim opcional (`j`/`k`, `gg`/`G`, `J`/`K` troca de canal, `/` busca).

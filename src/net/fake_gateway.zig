@@ -14,6 +14,7 @@ const leitura = @import("../core/leitura.zig");
 const jsonx = @import("jsonx.zig");
 const envio_json = @import("envio_json.zig");
 const envio = @import("../core/envio.zig");
+const envio_limpo = @import("envio_limpo.zig");
 const polls = @import("../core/polls.zig");
 const social = @import("social.zig");
 const thread_json = @import("thread_json.zig");
@@ -90,6 +91,13 @@ pub const sent = struct {
     pub var send_types_len: A = .init(0);
     pub var send_file: [512]u8 = undefined;
     pub var send_file_len: A = .init(0);
+    /// O que subiria como o primeiro arquivo do último envio (o começo, até caber aqui, e
+    /// o tamanho todo): a cópia sem localização (net/envio_limpo.zig) ou o próprio arquivo.
+    pub var send_data: [32 * 1024]u8 = undefined;
+    pub var send_data_len: A = .init(0);
+    pub var send_data_size: A = .init(0);
+    /// Quantos envios foram recusados por não dar para tirar a localização.
+    pub var strip_failures: A = .init(0);
     pub var votes: A = .init(0);
     pub var vote_body: [160]u8 = undefined;
     pub var vote_len: A = .init(0);
@@ -648,8 +656,41 @@ pub const Gateway = struct {
                         for (names[0..nf], 0..) |nm, i| tw.print("{s}{s}", .{ if (i > 0) "," else "", envio_json.partType(nm) orelse "" }) catch {};
                         sent.keep(&sent.send_types, &sent.send_types_len, tw.buffered());
                         sent.keep(&sent.send_file, &sent.send_file_len, if (nf > 0) m.files[0] else "");
-                        _ = sent.sends.fetchAdd(1, .monotonic);
                     }
+                    // Como o de verdade: a cópia limpa no lugar de cada arquivo, apagada no fim
+                    // do "pedido". O QA lê os bytes do primeiro, como subiriam.
+                    {
+                        var limpos: [10]envio_limpo.Preparo = @splat(.original);
+                        const nf = @min(m.files.len, limpos.len);
+                        defer for (limpos[0..nf]) |lp| envio_limpo.soltar(lp);
+                        var recusado = false;
+                        if (m.strip_metadata) for (m.files[0..nf], 0..) |f, i| {
+                            limpos[i] = envio_limpo.preparar(f);
+                            recusado = recusado or limpos[i] == .falhou;
+                        };
+                        if (nf > 0) {
+                            const f = switch (limpos[0]) {
+                                .limpo => |l| l,
+                                else => m.files[0],
+                            };
+                            var size: usize = 0;
+                            if (c.SDL_LoadFile(f.ptr, &size)) |data| {
+                                defer c.SDL_free(data);
+                                sent.keep(&sent.send_data, &sent.send_data_len, @as([*]const u8, @ptrCast(data))[0..size]);
+                            } else sent.keep(&sent.send_data, &sent.send_data_len, "");
+                            sent.send_data_size.store(size, .release);
+                        }
+                        if (recusado) {
+                            _ = sent.strip_failures.fetchAdd(1, .monotonic);
+                            envio.freeFileOpts(alloc, m.file_opts);
+                            for (m.files) |f| alloc.free(f);
+                            if (m.files.len > 0) alloc.free(m.files);
+                            alloc.free(m.content);
+                            g.emit(.{ .send_failed = .{ .channel = m.channel, .nonce = m.nonce } });
+                            continue;
+                        }
+                    }
+                    _ = sent.sends.fetchAdd(1, .monotonic);
                     envio.freeFileOpts(alloc, m.file_opts);
                     // Os arquivos já aparecem na cópia pendente (o Store
                     // mantém os anexos dela na confirmação).

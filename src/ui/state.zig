@@ -54,6 +54,8 @@ pub const Popup = union(enum) {
     compose_options: struct { x: f32, y: f32 },
     /// Texto alternativo de um arquivo da bandeja (ui/upload_opts.zig).
     upload_alt: struct { index: u8, x: f32, y: f32 },
+    /// Cortar e esconder pedaços de uma imagem da bandeja (ui/editor_imagem.zig).
+    editar_imagem: struct { index: u8 },
     /// Status personalizado: texto, emoji e até quando (ui/custom_status.zig).
     custom_status: struct { x: f32, y: f32 },
     /// Pessoas de um grupo de DM: tirar e pôr gente (ui/group_dm.zig).
@@ -115,6 +117,9 @@ pub const Upload = struct {
     spoiler: bool = false,
     /// Texto alternativo (c_allocator; vazio = nenhum).
     alt: []u8 = &.{},
+    /// Uma imagem parada que o editor abre (JPEG, PNG sem animação, BMP): ganha o
+    /// botão Editar no cartão (ui/editor_imagem.zig).
+    editavel: bool = false,
 
     pub fn name(u: *const Upload) []const u8 {
         return std.fs.path.basename(u.path);

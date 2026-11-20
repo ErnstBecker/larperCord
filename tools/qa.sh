@@ -69,6 +69,11 @@ QA_SUITE=call run "tela da call" $bin --qa --theme classico
 QA_SUITE=flutuante run "janela flutuante" $bin --qa --theme classico
 # larpercord ctl: a porta da demonstração (ctl-demo.port) só abre com LARPER_CTL.
 QA_SUITE=ctl LARPER_CTL=1 run "controle externo" $bin --qa --theme classico
+# Imagem privada: colar, cortar e esconder no editor da bandeja (o PNG que sai conferido
+# pixel a pixel) e a localização que sai antes de enviar, ligada e desligada; depois o
+# editor num tema claro, em japonês e com a interface em 125%.
+QA_SUITE=imagem run "imagem privada" $bin --qa --theme classico
+QA_SUITE=imagem-tema QA_PREFIX=papel-claro-ja- run "imagem (japonês, 125%)" $bin --qa --theme papel --mode claro --lang ja
 # Op 8: os membros dos autores das páginas (DM nunca, no máximo um por servidor a cada
 # 30 s, as páginas se juntando, sem repetir), e o apelido e a cor do cargo numa
 # mensagem antiga depois da resposta.

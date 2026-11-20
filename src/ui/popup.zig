@@ -144,6 +144,7 @@ fn popupKey(p: state.Popup) u64 {
         .tab_set_name => |t| 26 +% (if (t.rename) |i| @as(u64, i) + 1 else 0) *% 31,
         .lembrete => |t| 27 +% t.message *% 31 +% @as(u64, t.edit) *% 17,
         .exportar => |t| 27 +% t.channel *% 31,
+        .editar_imagem => |t| 28 +% @as(u64, t.index) *% 31,
     };
 }
 
@@ -228,6 +229,7 @@ pub fn draw(ctx: *d.Ctx) void {
         .devices => |dv| @import("device_menu.zig").draw(ctx, dv.which, dv.x, dv.y),
         .tab_set_name => |t| @import("conjuntos.zig").drawName(ctx, t.rename),
         .exportar => |t| exportar_ui.drawDialog(ctx, t.channel),
+        .editar_imagem => |t| @import("editor_imagem.zig").draw(ctx, t.index),
         .none => {},
     }
     animateOpen(ctx);

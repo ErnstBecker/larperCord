@@ -182,6 +182,9 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     const t1 = if (profile) c.SDL_GetTicksNS() else 0;
     // O popup aberto na janela flutuante é desenhado lá (app_flutuante.zig).
     popup.claim(ctx.st, false);
+    // O editor de imagem fechou no quadro anterior: a textura e a imagem saem antes de
+    // qualquer desenho deste.
+    @import("editor_imagem.zig").varrer(ctx.st);
     if (!popup.in_pip) popup.draw(ctx);
     // Formulário de comando e modal de bot: por cima dos popups.
     @import("interact.zig").draw(ctx);
