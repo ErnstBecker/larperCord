@@ -51,6 +51,9 @@ pub const Error = error{ Failed, OutOfMemory };
 /// Onde o comando escreve a resposta.
 pub const Out = struct {
     req: *ctl.Request,
+    /// A resposta ainda não está pronta (um comando do Inspetor que precisa de um quadro):
+    /// o pedido fica guardado e é respondido depois, dentro de `ctl.reply_ms`.
+    hold: bool = false,
 
     pub fn list(o: *Out) *std.ArrayList(u8) {
         return &o.req.body;
@@ -98,6 +101,7 @@ pub const commands = [_]Command{
     .{ .name = "hide", .run = hide, .redraw = true, .pt = "esconde na bandeja (sem bandeja, minimiza)", .en = "hides to the tray (without a tray, minimizes)" },
     .{ .name = "toggle", .run = toggle, .redraw = true, .pt = "mostra ou esconde, como o clique no ícone da bandeja", .en = "shows or hides, like clicking the tray icon" },
     .{ .name = "open", .run = open, .redraw = true, .usage = "<link | id>", .pt = "abre um link do Discord ou o ID de um canal", .en = "opens a Discord link or a channel ID" },
+    .{ .name = "inspect", .run = inspect, .redraw = true, .usage = "<comando>", .pt = "o Inspetor: achar e clicar elementos, a árvore, a rede, o log… (inspect help)", .en = "the Inspector: find and click elements, the tree, the network, the log… (inspect help)" },
     .{ .name = "watch", .run = watch, .usage = "[--waybar | --format json|waybar|text]", .pt = "uma linha a cada mudança (status, não lidas, call)", .en = "one line per change (status, unread, call)" },
     .{ .name = "help", .run = help, .pt = "esta lista", .en = "this list" },
 };
@@ -152,6 +156,16 @@ pub fn pump(app: *App) bool {
     var redraw = false;
     for (list.items) |req| {
         var out: Out = .{ .req = req };
+        // O Inspetor recebe a linha inteira (um `type` pode ter mais palavras que as 16 partes).
+        if (inspectLine(req.line) != null) {
+            inspect(app, undefined, &out) catch |e| switch (e) {
+                error.Failed => {},
+                error.OutOfMemory => req.err = .{ .code = .failed, .text = "out of memory" },
+            };
+            redraw = true;
+            if (!out.hold) ctl.finish(req);
+            continue;
+        }
         const args = proto.Args.parse(req.line) orelse blk: {
             req.err = .{ .code = .usage, .text = "too many arguments" };
             break :blk null;
@@ -475,4 +489,86 @@ fn watch(app: *App, args: *const proto.Args, out: *Out) Error!void {
 
 fn help(_: *App, _: *const proto.Args, out: *Out) Error!void {
     try writeHelp(out.list(), alloc);
+}
+
+// --- inspect: os comandos do Inspetor (src/inspect/comandos.zig) ---------------------------
+
+const insp_cmd = @import("inspect/comandos.zig");
+
+/// Um pedido do Inspetor esperando um quadro (achar, clicar, a árvore) ou o print.
+const Held = struct { req: *ctl.Request, since_ms: u64, shot: bool };
+var held: std.ArrayList(Held) = .empty;
+
+/// O que vem depois de "inspect " na linha, ou nulo se não é um `inspect`.
+fn inspectLine(line: []const u8) ?[]const u8 {
+    const t = std.mem.trim(u8, line, " \t\r");
+    if (!std.mem.startsWith(u8, t, "inspect")) return null;
+    if (t.len == "inspect".len) return "";
+    if (t["inspect".len] != ' ' and t["inspect".len] != '\t') return null;
+    return std.mem.trim(u8, t["inspect".len..], " \t");
+}
+
+fn inspect(app: *App, _: *const proto.Args, out: *Out) Error!void {
+    const line = inspectLine(out.req.line) orelse "";
+    if (line.len == 0) return out.fail(.usage, "inspect <command> (inspect help lists them)");
+    switch (try runInspect(app, line, out.req)) {
+        .pronto => {
+            // O print sai no fim do próximo quadro: a resposta espera o arquivo.
+            if (std.mem.startsWith(u8, line, "shot ") and insp_cmd.busy()) {
+                out.hold = true;
+                try held.append(alloc, .{ .req = out.req, .since_ms = c.SDL_GetTicks(), .shot = true });
+            }
+        },
+        .depois => {
+            out.hold = true;
+            try held.append(alloc, .{ .req = out.req, .since_ms = c.SDL_GetTicks(), .shot = false });
+        },
+    }
+}
+
+/// Roda a linha no Inspetor; a resposta vai para o corpo do pedido.
+fn runInspect(app: *App, line: []const u8, req: *ctl.Request) Error!insp_cmd.Fim {
+    var w: std.Io.Writer.Allocating = .init(alloc);
+    defer w.deinit();
+    const fim = insp_cmd.run(app, line, &w.writer, .ctl);
+    if (fim == .pronto) try req.body.appendSlice(alloc, w.written());
+    return fim;
+}
+
+/// Os pedidos guardados do Inspetor: depois de um quadro (`after_frame`), roda de novo os que
+/// esperavam um; e responde com erro os que passaram do prazo (janela escondida: sem quadro).
+pub fn inspectPump(app: *App, after_frame: bool) void {
+    if (held.items.len == 0) return;
+    const now = c.SDL_GetTicks();
+    var i: usize = 0;
+    while (i < held.items.len) {
+        const h = held.items[i];
+        var done = false;
+        if (now - h.since_ms > ctl.reply_ms - 300) {
+            h.req.err = .{ .code = .timeout, .text = "no frame was drawn in time (is the window hidden?)" };
+            done = true;
+        } else if (after_frame) {
+            if (h.shot) {
+                if (!insp_cmd.busy()) {
+                    if (insp_cmd.shot_result != .ok) h.req.err = .{ .code = .failed, .text = "couldn't save the screenshot" } else h.req.body.appendSlice(alloc, "saved\n") catch {};
+                    done = true;
+                }
+            } else if (inspectLine(h.req.line)) |line| {
+                const fim = runInspect(app, line, h.req) catch blk: {
+                    h.req.err = .{ .code = .failed, .text = "out of memory" };
+                    break :blk .pronto;
+                };
+                done = fim == .pronto;
+            } else done = true;
+        }
+        if (done) {
+            ctl.finish(h.req);
+            _ = held.swapRemove(i);
+        } else i += 1;
+    }
+}
+
+/// Tem pedido do Inspetor esperando: o laço desenha quadros até ele sair.
+pub fn inspectWaiting() bool {
+    return held.items.len > 0;
 }

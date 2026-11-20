@@ -38,6 +38,7 @@ meio dos eventos do app, sem desenhar nada.
 | `watch` | Fica rodando e escreve uma linha cada vez que o status, as não lidas ou a call mudam |
 | `watch --waybar` | O mesmo, em JSON para um módulo custom do waybar |
 | `watch --format text` | O mesmo, numa linha de texto (polybar e outros) |
+| `inspect <comando>` | Roda um comando do [Inspetor](inspector.pt-BR.md): `inspect find <texto>`, `inspect tree`, `inspect el <seletor>`, `inspect net`, `inspect log`, `inspect shot arquivo.png`… (`inspect help` lista todos). Clicar e digitar só funcionam no modo demonstração ou com "Deixar o ctl clicar e digitar" ligado no Console do Inspetor |
 | `help` | A lista de comandos |
 
 A resposta vai para a saída padrão e o código de saída é 0 quando deu certo, 1 quando não (o

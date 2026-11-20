@@ -37,6 +37,7 @@ is handled between the app's events, without drawing anything.
 | `watch` | Keeps running and prints one line each time the status, the unread counts or the call change |
 | `watch --waybar` | The same, as JSON for a waybar custom module |
 | `watch --format text` | The same, as a plain line (polybar and others) |
+| `inspect <command>` | Runs a command of the [Inspector](inspector.md): `inspect find <text>`, `inspect tree`, `inspect el <selector>`, `inspect net`, `inspect log`, `inspect shot file.png`… (`inspect help` lists them). Clicking and typing only work in demo mode or with "Let ctl click and type" on in the Inspector's Console |
 | `help` | The list of commands |
 
 The answer goes to standard output and the exit code is 0 when it worked, 1 when it didn't (the

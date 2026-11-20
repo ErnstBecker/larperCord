@@ -2079,6 +2079,7 @@
 "the house favorite" "фаворит заведения"
 "The icon stays in the system tray while the app runs: clicking it shows or hides the window, its menu has Open and Quit, and closing the window keeps the app connected there. When off, there's no icon and closing quits the app." "Пока приложение работает, его значок остаётся в системном трее: нажатие на него показывает или скрывает окно, в его меню есть «Открыть» и «Выйти», а после закрытия окна приложение остаётся там на связи. Если выключено, значка нет, и закрытие окна завершает приложение."
 "the image is over 10 MB" "изображение больше 10 МБ"
+"the Inspector: find and click elements, the tree, the network, the log… (inspect help)" "the Inspector: find and click elements, the tree, the network, the log… (inspect help)"
 "the interaction failed" "взаимодействие не удалось"
 "The LARPER_RENDERER variable is set and wins over this choice." "The LARPER_RENDERER variable is set and wins over this choice."
 "The left strip disappears until the mouse gets close." "Левая полоса прячется, пока мышь не приблизится."

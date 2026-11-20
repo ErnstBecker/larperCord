@@ -3426,7 +3426,9 @@ pub const App = struct {
             if (input) pending = 3;
             // O robô do Inspetor (clicar e digitar pelo Console ou pelo ctl), um quadro pedido
             // para gravar, ou algo novo nas listas com a janela dele aberta.
-            if (insp_cmd.busy() or inspetor.quadros_pedidos > 0) pending = @max(pending, 2);
+            // Um `ctl inspect` esperando quadro também (e o que passou do prazo é respondido).
+            app_ctl.inspectPump(app, false);
+            if (insp_cmd.busy() or inspetor.quadros_pedidos > 0 or app_ctl.inspectWaiting()) pending = @max(pending, 2);
             if (inspetor.listsChanged()) bg_dirty = true;
             // Venceu um lembrete: o aviso (e, sem ninguém olhando, a notificação). Antes de
             // olhar se a janela está escondida: na bandeja, a notificação sai assim mesmo.
@@ -3764,6 +3766,7 @@ pub const App = struct {
             app.stats.frame_us = @intCast((c.SDL_GetTicksNS() - t0) / 1000);
             // O print pedido pelo Inspetor (comando shot), com o quadro já desenhado.
             insp_cmd.afterRender(app);
+            app_ctl.inspectPump(app, true);
             if (inspetor.aberto()) @import("inspect/aba_desempenho.zig").sample(app, app.stats.frame_us, show, now());
 
             if (login_result) |lr| {

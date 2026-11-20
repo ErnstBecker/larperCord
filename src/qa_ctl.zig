@@ -265,6 +265,56 @@ fn openUsage(_: *App) bool {
 
 // --- Status e não lidas ------------------------------------------------------------------------
 
+// --- inspect ---------------------------------------------------------------------------
+
+/// Um canal de texto do servidor aberto que não é o atual (o `click` abre ele).
+var insp_target: Id = 0;
+fn askInspectFind(app: *App) void {
+    const ch = app.st.activeChannel() orelse return;
+    const cs = app.store.channel(ch) orelse return;
+    for (app.store.channelsOf(app.st.guild)) |id| {
+        const other = app.store.channel(id) orelse continue;
+        if (id != ch and other.info.kind == .text) {
+            insp_target = id;
+            break;
+        }
+    }
+    ask("inspect find {s}", .{cs.info.name});
+}
+fn inspectFound(_: *App) bool {
+    const a = lastOk() orelse return false;
+    return std.mem.indexOf(u8, a.text(), "text.") != null;
+}
+fn askInspectEl(_: *App) void {
+    ask("inspect el qa:composer", .{});
+}
+fn inspectEl(_: *App) bool {
+    const a = lastOk() orelse return false;
+    return std.mem.startsWith(u8, a.text(), "{\"index\":") and std.mem.indexOf(u8, a.text(), "\"scope\":\"composer\"") != null;
+}
+fn askInspectClick(_: *App) void {
+    ask("inspect click qa:channel:{d}", .{insp_target});
+}
+fn inspectClicked(app: *App) bool {
+    _ = lastOk() orelse return false;
+    return insp_target != 0 and app.st.activeChannel() == insp_target;
+}
+fn askInspectShot(_: *App) void {
+    _ = c.SDL_RemovePath("qa-out/ctl-inspect.png");
+    ask("inspect shot qa-out/ctl-inspect.png", .{});
+}
+fn inspectShot(_: *App) bool {
+    const a = lastOk() orelse return false;
+    var info: c.SDL_PathInfo = undefined;
+    return std.mem.indexOf(u8, a.text(), "saved") != null and c.SDL_GetPathInfo("qa-out/ctl-inspect.png", &info) and info.size > 1000;
+}
+fn askInspectNothing(_: *App) void {
+    ask("inspect", .{});
+}
+fn inspectUsage(_: *App) bool {
+    return lastErr(.usage);
+}
+
 fn askStatus(_: *App) void {
     ask("status", .{});
 }
@@ -749,6 +799,18 @@ pub const ops = [_]Op{
     expect("canal de voz: ERR not_text", notText),
     run(askOpenOther),
     expect("link de outro site: ERR usage", openUsage),
+
+    s("ctl: inspect (os comandos do Inspetor)"),
+    run(askInspectFind),
+    expect("inspect find acha os elementos do quadro (gravado a pedido, com o Inspetor fechado)", inspectFound),
+    run(askInspectEl),
+    expect("inspect el devolve o JSON do elemento", inspectEl),
+    run(askInspectClick),
+    expect("inspect click (na demonstração) clica e o canal abre", inspectClicked),
+    run(askInspectShot),
+    expect("inspect shot responde depois que o arquivo foi gravado", inspectShot),
+    run(askInspectNothing),
+    expect("inspect sem comando: ERR usage", inspectUsage),
 
     s("ctl: interface parada"),
     run(askStatus),
