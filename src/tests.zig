@@ -18,6 +18,7 @@ test {
     _ = @import("core/resample.zig");
     _ = @import("core/plain_letters.zig");
     _ = @import("core/gif_favorites.zig");
+    _ = @import("core/gif_clipe.zig");
     _ = @import("core/gif_quadros.zig");
     _ = @import("core/entrada.zig");
     _ = @import("platform/debug_log.zig");

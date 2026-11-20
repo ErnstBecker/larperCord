@@ -97,6 +97,11 @@ QA_SUITE=lembretes run "lembretes" $bin --qa --theme classico
 epoch=$(( $(date +%s) * 1000 ))
 LARPER_DEMO_EPOCH_MS=$epoch QA_SUITE=lembretes-a run "lembretes (antes)" $bin --qa --theme classico
 LARPER_DEMO_EPOCH_MS=$epoch QA_LEMBRETES_READ=1 QA_SUITE=lembretes-b run "lembretes (depois)" $bin --qa --theme classico
+# Clipes dos GIFs favoritos: o primeiro faz (estrela, fila, teto, Apagar cache), o segundo
+# abre pelo que ficou em qa-out/gif-favorites e confere que a aba não baixa nada.
+rm -rf qa-out/gif-favorites
+QA_SUITE=gif-clipes-a run "clipes dos GIFs (faz)" $bin --qa --theme classico
+QA_SUITE=gif-clipes-b run "clipes dos GIFs (reabre)" $bin --qa --theme classico
 # Apagar todos os dados: pastas de mentira em qa-out/apagar, conferidas de fora depois que
 # o app fecha, e nada apagado fora delas.
 bash tools/qa_apagar.sh "$bin" || total_fail=1

@@ -168,7 +168,9 @@ The official client is a whole browser dressed up as an app. On the same PC:
   audio files (.mp3, .ogg, .wav, .flac, .m4a…) play in the conversation, with the whole file's waveform
   as the seek bar, 1×/1.5×/2× speed and small bars that dance while it plays (Opus, MP3 and WAV with
   nothing installed, the rest through FFmpeg); long GIFs play every frame, and a star on any GIF adds it
-  to your favorites.
+  to your favorites, whose tab in the GIF picker opens instantly with every GIF playing from a small clip
+  kept in `~/.cache/larpercord/gif-favorites` (`%LOCALAPPDATA%\larpercord\gif-favorites` on Windows;
+  50 MB cap, removed by Clear cache).
 - **Export and save**: right-click a conversation → Export Conversation… writes it as HTML (one page that opens
   offline), Markdown or JSON from what's already on your computer, with nothing requested from Discord.
   Right-click an image, video or file → Save… or Save to Downloads keeps the original file.

@@ -200,6 +200,7 @@ pub fn build(b: *std.Build) void {
         translate.linkSystemLibrary("zlib", .{});
         translate.linkSystemLibrary("libwebp", .{});
         translate.linkSystemLibrary("libwebpdemux", .{});
+        translate.linkSystemLibrary("libwebpmux", .{});
         translate.linkSystemLibrary("opus", .{});
     }
 
@@ -365,7 +366,9 @@ pub fn build(b: *std.Build) void {
         } else {
             for ([_][]const u8{ "SDL3.dll", "curl.dll", "crypto.dll" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no });
         }
-        for ([_][]const u8{ "opus", "z", "webp", "webpdemux", "sharpyuv" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no, .preferred_link_mode = .static });
+        // webpmux: o codificador de WebP animado dos clipes dos GIFs favoritos (vem no mesmo
+        // pacote da libwebp de tools/windows_deps.sh).
+        for ([_][]const u8{ "opus", "z", "webpmux", "webp", "webpdemux", "sharpyuv" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no, .preferred_link_mode = .static });
         for ([_][]const u8{ "ws2_32", "advapi32", "crypt32", "shell32", "ole32", "bcrypt", "user32" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no });
         if (!single_exe) for ([_][]const u8{ "SDL3.dll", "libcurl-x64.dll", "libcrypto-3-x64.dll" }) |dll| b.getInstallStep().dependOn(&b.addInstallBinFile(win_deps.path(b, b.pathJoin(&.{ "bin", dll })), dll).step);
     } else {
@@ -376,6 +379,12 @@ pub fn build(b: *std.Build) void {
         mod.linkSystemLibrary("zlib", .{});
         mod.linkSystemLibrary("libwebp", .{});
         mod.linkSystemLibrary("libwebpdemux", .{});
+        // O codificador de WebP animado dos clipes dos GIFs favoritos. No portátil, estático
+        // (o libwebp-dev do Ubuntu traz o .a): o binário não passa a exigir a libwebpmux, que
+        // nem toda distro instala junto com a libwebp.
+        if (portable) {
+            mod.linkSystemLibrary("webpmux", .{ .use_pkg_config = .no, .preferred_link_mode = .static, .search_strategy = .mode_first });
+        } else mod.linkSystemLibrary("libwebpmux", .{});
         mod.linkSystemLibrary("opus", .{});
         mod.linkSystemLibrary("crypto", .{ .preferred_link_mode = if (portable) .static else .dynamic });
         // A libssl do curl: o TLS do Chrome mexe no SSL_CTX dele (src/platform/tls_chrome.c).
