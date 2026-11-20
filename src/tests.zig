@@ -88,6 +88,7 @@ test {
     _ = @import("core/debounce.zig");
     _ = @import("net/gw_budget.zig");
     _ = @import("net/member_ask.zig");
+    _ = @import("net/member_search.zig");
     _ = @import("core/voice_timer.zig");
     _ = @import("net/voice_info_json.zig");
     _ = @import("net/voz_movido.zig");

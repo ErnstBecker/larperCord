@@ -14,6 +14,7 @@ const UrlPair = @import("media_refresh.zig").Pair;
 const moderacao = @import("moderacao.zig");
 const entrada = @import("entrada.zig");
 const interaction = @import("interaction.zig");
+const member_search = @import("../net/member_search.zig");
 const Id = types.Id;
 
 pub const Ready = struct {
@@ -180,6 +181,10 @@ pub const Event = union(enum) {
     /// CHANNEL_INFO (resposta ao op 43): os canais de voz do servidor que têm call
     /// agora; os que não vieram não têm. A lista é alocada e passa para o Store.
     channel_info: struct { guild: Id, starts: []VoiceStart },
+    /// Como terminou um `search_members` (net/member_search.zig): respondido (os membros
+    /// já vieram antes, nos `member_info`/`member_face` de sempre), coberto por uma
+    /// resposta anterior, ou sem resposta.
+    member_search: member_search.Reply,
     /// VOICE_CHANNEL_START_TIME_UPDATE: a call de um canal começou (`start_s`, s
     /// Unix) ou acabou (0).
     voice_start: struct { guild: Id, channel: Id, start_s: i64 },
@@ -399,6 +404,10 @@ pub const Command = union(enum) {
     /// Quando começou a call de cada canal de voz de um servidor (op 43, Request
     /// Channel Info): chega como `channel_info`. Uma vez por servidor e sessão.
     channel_info: Id,
+    /// A busca do `@` na caixa de texto (op 8 com `query`, net/member_search.zig): só a
+    /// última vale, e sai depois de uma pausa na digitação, no ritmo do op 8 daquele
+    /// servidor. `len` 0 cancela a que espera. Cada uma volta como `member_search`.
+    search_members: member_search.Query,
     /// Aceita um pedido de amizade (true) ou remove/recusa/cancela (false).
     /// `from`: de onde foi o clique (o `X-Context-Properties`, core/conta.zig).
     relationship: struct { user: Id, accept: bool, from: @import("conta.zig").Origin },
@@ -497,6 +506,8 @@ pub const Command = union(enum) {
 
 pub const Action = union(enum) {
     search_messages: SearchRequest,
+    /// A busca do `@` (ui/autocomplete.zig) para a rede: `Command.search_members`.
+    search_members: member_search.Query,
     /// Aceitar/recusar pedido de mensagem, pôr/tirar gente do grupo, sair dele.
     social: Social,
     select_guild: Id,

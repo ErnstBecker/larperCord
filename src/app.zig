@@ -1897,6 +1897,7 @@ pub const App = struct {
                 app.cmd(.{ .gif_favorite = fav });
             },
             .search_messages => |s| app.cmd(.{ .search_messages = s }),
+            .search_members => |q| app.cmd(.{ .search_members = q }),
             // Sem rede (antes do login): o pedido não vai a lugar nenhum.
             .interaction => |ic| if (app.net == .none) @import("core/interaction.zig").freeCmd(std.heap.c_allocator, ic) else app.cmd(.{ .interaction = ic }),
             .join_invite => |code| app.cmd(.{ .join_invite = code }),
@@ -2544,6 +2545,8 @@ pub const App = struct {
             if (e == .voice_ping) app.st.voice_ping_ms = e.voice_ping;
             if (e == .voice_audio) app.voiceAudio(e.voice_audio.mic_ok, e.voice_audio.out_ok);
             if (e == .history) timeline.mark(.historico);
+            // A busca do `@` respondeu: a lista do autocompletar se refaz no próximo quadro.
+            if (e == .member_search) autocomplete.searchReply(e.member_search);
             if (e == .status and e.status == .failed) failed = true;
             if (e == .net_fail and app.login.phase == .connecting) app.login.net_fail = e.net_fail;
             if (e == .status and e.status == .rejected) token_dead = true;
