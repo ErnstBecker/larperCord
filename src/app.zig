@@ -61,6 +61,7 @@ const apagar = @import("platform/apagar.zig");
 const accounts_store = @import("net/accounts_store.zig");
 const app_accounts = @import("app_accounts.zig");
 const app_chamada = @import("app_chamada.zig");
+const app_golive = @import("app_golive.zig");
 const app_presenca = @import("app_presenca.zig");
 const app_flutuante = @import("app_flutuante.zig");
 const voz_audio = @import("net/voz_audio.zig");
@@ -385,6 +386,7 @@ pub const App = struct {
         mascote_arquivos.setup(wakeMascot);
         // Antes da rede: a thread do gateway inicia o libcurl pelo mesmo caminho.
         app.images = try images.Cache.init(app.win.renderer, app.win.wake_type);
+        @import("net/golive_media.zig").init(app.win.wake_type);
         @import("ui/exportar.zig").init(app.win.wake_type);
 
         // Com token salvo: conecta direto (a tela de abertura aparece enquanto
@@ -666,6 +668,7 @@ pub const App = struct {
         app.clearUploads();
         app.picked.deinit();
         @import("ui/video.zig").shutdown();
+        @import("net/golive_media.zig").shutdown();
         @import("ui/voice_msg.zig").shutdown();
         @import("ui/gravar_audio.zig").shutdown();
         // Exportação ou "Salvar" andando: cancela e espera (só fica o .part, que elas apagam).
@@ -1153,6 +1156,7 @@ pub const App = struct {
 
     /// O que só vale durante uma call (entrou, saiu, trocou de conta).
     pub fn resetCallState(app: *App) void {
+        app_golive.reset(app);
         // Saindo da call (ou trocando de call) com a tela dela aberta: volta para o que
         // estava antes dela (o servidor, a DM, os amigos).
         if (app.st.call_view) {
@@ -2225,6 +2229,10 @@ pub const App = struct {
                 app.saveSettings();
             },
             .toggle_voice_mixer => st.voice_mixer = !st.voice_mixer,
+            .golive_share => |gs| app_golive.share(app, gs),
+            .golive_stop => app_golive.stop(app),
+            .golive_watch => |uid| app_golive.watch(app, uid),
+            .golive_unwatch => app_golive.unwatch(app),
             .start_call => |ch| app_chamada.start(app, ch),
             .accept_call => app_chamada.accept(app),
             .decline_call => app_chamada.decline(app),
@@ -2510,6 +2518,7 @@ pub const App = struct {
             if (quiet) |ch| app.st.filtros.quiet(app.gpa, &app.store, ch);
             app.afterEvent(e);
             app_chamada.onEvent(app, e);
+            app_golive.onEvent(app, e);
             if (e == .thread_open) app.openChannel(e.thread_open, false);
         }
         if (!was_ready and app.store.ready) {
@@ -3607,6 +3616,7 @@ pub const App = struct {
                 const tf = c.SDL_GetTicksNS();
                 // As miniaturas de tema só existem para a página de Configurações.
                 if (app.st.settings.open) app.themes.ensurePreviews();
+                app_golive.update(app);
                 root.frame(&ctx, &app.placed, app.themes.previews.items);
                 plugin_host.pollKeys(app);
                 // Um clique pode ter mexido no Store direto (marcar como não lida
@@ -3646,6 +3656,7 @@ pub const App = struct {
             const clear = [4]f32{ bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a };
             const draw_data = c.ImGui_GetDrawData();
             if (@import("ui/video.zig").takeChanged()) app.gate.redraw();
+            if (@import("ui/golive_view.zig").takeChanged()) app.gate.redraw();
             // O mascote invisível vai numa textura que o resumo do quadro não vê.
             if (@import("ui/camada.zig").takeChanged()) app.gate.redraw();
             // GIF que toca aos poucos: quadro novo na mesma textura, com o desenho igual.

@@ -10,8 +10,10 @@
 //! voltar para a conversa (Esc também volta), e os botões da faixa de voz, numa barra
 //! com o tempo da call, ficam no lugar da caixa de mensagem. Numa call de DM ou grupo,
 //! a mesma grade fica numa faixa em cima da conversa. Nos temas de terminal, uma
-//! lista em texto. Sem câmera nem transmissão: só quem está e como está. Nada aqui
-//! anima sozinho: a tela muda quando alguém fala, entra ou sai, como a lista de canais.
+//! lista em texto. Quem transmite a tela tem o botão de assistir no quadro; assistindo,
+//! a transmissão fica grande em cima e os quadros numa faixa embaixo (ui/golive_view.zig).
+//! Nada aqui anima sozinho: a tela muda quando alguém fala, entra ou sai, como a lista
+//! de canais, ou quando chega imagem da transmissão.
 const std = @import("std");
 const c = @import("c");
 const kdl = @import("../theme/kdl.zig");
@@ -27,6 +29,7 @@ const forum = @import("forum.zig");
 const invites = @import("invites.zig");
 const mascote = @import("mascote.zig");
 const voice_timer = @import("voice_timer.zig");
+const golive_view = @import("golive_view.zig");
 const theme_mod = @import("../theme/theme.zig");
 const voz = @import("../core/voz.zig");
 const vt = @import("../core/voice_timer.zig");
@@ -142,9 +145,13 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, look: Look, guild: Id, uid: Id, r: d.Rec
         d.rect(dl, r, fill, radius);
         d.border(dl, r, ctx.col(.border).alpha(0.6), radius, 1);
     }
-    const ink = inkOn(ctx, fill);
+    // Transmitindo: o nosso quadro mostra a nossa tela.
+    const screen = mine and golive_view.tilePreview(ctx, dl, r, radius);
+    const ink = if (screen) d.Rgba.white else inkOn(ctx, fill);
     if (qa.compiled and mine) qa_tile = .{ .set = true, .fill = fill, .base = base, .tint = look.tint };
-    const hb = d.hit(ctx, 8900 + idx, r);
+    // Quem transmite tem o botão de assistir por cima do quadro (ele ganha o clique).
+    const watchable = vf.self_stream and !mine and !ctx.pip;
+    const hb = if (watchable) d.hitUnder(ctx, 8900 + idx, r) else d.hit(ctx, 8900 + idx, r);
     if (hb.hovered) d.rect(dl, r, ink.alpha(0.06), radius);
     qa.mark(r, "grid-tile:{d}", .{uid});
     if (hb.clicked or hb.right) openMenu(ctx, uid);
@@ -156,7 +163,7 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, look: Look, guild: Id, uid: Id, r: d.Rec
         ring(dl, look.shape, cx, cy, av, ctx.col(.online));
         qa.mark(r, "grid-speaking:{d}", .{uid});
     }
-    w.avatarAt(ctx, dl, guild, cx, cy, av, uid, look.shape, null, 1, .{ .animate = false, .request = photo_px });
+    if (!screen) w.avatarAt(ctx, dl, guild, cx, cy, av, uid, look.shape, null, 1, .{ .animate = false, .request = photo_px });
 
     // O nome e, embaixo, a atividade, centrados (no seu quadro, acima do medidor).
     const name = ctx.store.nameIn(guild, uid) orelse "?";
@@ -210,9 +217,43 @@ fn tile(ctx: *d.Ctx, dl: *c.ImDrawList, look: Look, guild: Id, uid: Id, r: d.Rec
         d.rect(dl, lr, ctx.col(.danger), 5);
         d.text(dl, lf, 11, lr.x + 6, d.centerY(lr, 11), d.Rgba.white, lt);
         qa.mark(lr, "grid-live:{d}", .{uid});
+        if (mine and ctx.st.golive.viewers > 0) {
+            var vb: [32]u8 = undefined;
+            const vtx = i18n.fmt(&vb, "{d} assistindo", "{d} watching", .{ctx.st.golive.viewers});
+            const vf_ = ctx.ui.get(.medium);
+            const vr: d.Rect = .{ .x = lr.right() + 6, .y = lr.y, .w = d.width(vf_, 11, vtx) + 12, .h = 20 };
+            d.rect(dl, vr, ctx.col(.bg).alpha(0.72), 5);
+            d.text(dl, vf_, 11, vr.x + 6, d.centerY(vr, 11), ctx.col(.text), vtx);
+            qa.mark(vr, "grid-viewers:{d}", .{ctx.st.golive.viewers});
+        }
     }
+    if (watchable) watchButton(ctx, dl, uid, cx, cy + av / 2 - 6, idx);
 
     if (mine) meter(ctx, dl, r, ink, hb.hovered);
+}
+
+/// "Assistir" no quadro de quem transmite (assistindo: "Assistindo", que leva à
+/// transmissão em tela cheia).
+fn watchButton(ctx: *d.Ctx, dl: *c.ImDrawList, uid: Id, cx: f32, cy: f32, idx: usize) void {
+    const watching = ctx.st.golive.watching == uid;
+    const label = if (watching) i18n.tr("Assistindo", "Watching") else i18n.tr("Assistir", "Watch");
+    const f = ctx.ui.get(.semibold);
+    const bw = d.width(f, 13, label) + 40;
+    const br: d.Rect = .{ .x = @round(cx - bw / 2), .y = @round(cy - 15), .w = bw, .h = 30 };
+    const hb = d.hit(ctx, 8920 + idx, br);
+    qa.mark(br, "grid-watch:{d}", .{uid});
+    const bg = if (watching) ctx.col(.elevated) else ctx.col(.accent);
+    d.shadow(dl, br, 15, 10, ctx.col(.shadow).alpha(0.35));
+    d.rect(dl, br, if (hb.hovered) bg.mix(d.Rgba.black, 0.15) else bg, 15);
+    const ink = if (watching) ctx.col(.text) else d.Rgba.white;
+    // O triângulo de "play".
+    const px = br.x + 16;
+    const py = br.y + 15;
+    c.ImDrawList_AddTriangleFilled(dl, d.v(px - 3, py - 5), d.v(px - 3, py + 5), d.v(px + 5, py), ink.u());
+    d.text(dl, f, 13, br.x + 28, d.centerY(br, 13), ink, label);
+    if (hb.clicked) {
+        if (watching) ctx.st.golive.focus = true else ctx.act(.{ .golive_watch = uid });
+    }
 }
 
 /// O fundo do seu quadro no último quadro desenhado (o QA confere que é o do tema).
@@ -289,15 +330,18 @@ fn line(ctx: *d.Ctx, dl: *c.ImDrawList, font: *c.ImFont, fs: f32, guild: Id, uid
     const name = ctx.store.nameIn(guild, uid) orelse "?";
     const act = if (u) |x| x.activity orelse "" else "";
     var buf: [256]u8 = undefined;
-    const t = std.fmt.bufPrint(&buf, "{s} {s}{s}{s}{s}{s}", .{
+    var vb: [32]u8 = undefined;
+    const t = std.fmt.bufPrint(&buf, "{s} {s}{s}{s}{s}{s}{s}", .{
         if (speaking) "◉" else "○",
         name,
         channels.voiceFlagsTty(vf),
         if (act.len > 0) "  · " else "",
         act,
         if (vf.self_stream) i18n.tr("  [AO VIVO]", "  [LIVE]") else "",
+        if (vf.self_stream and uid == ctx.store.me and ctx.st.golive.viewers > 0) i18n.fmt(&vb, " ({d} assistindo)", " ({d} watching)", .{ctx.st.golive.viewers}) else "",
     }) catch name;
-    const hb = d.hit(ctx, 8900 + idx, r);
+    if (vf.self_stream and uid == ctx.store.me and ctx.st.golive.viewers > 0) qa.mark(r, "grid-viewers:{d}", .{ctx.st.golive.viewers});
+    const hb = if (vf.self_stream and uid != ctx.store.me) d.hitUnder(ctx, 8900 + idx, r) else d.hit(ctx, 8900 + idx, r);
     if (hb.hovered) d.rect(dl, r, ctx.col(.hover), 0);
     if (hb.clicked or hb.right) openMenu(ctx, uid);
     _ = d.textClipped(dl, font, fs, r.x + 4, d.centerY(r, fs), if (speaking) ctx.col(.online) else ctx.col(.text), t, r.w - 8);
@@ -308,11 +352,27 @@ fn line(ctx: *d.Ctx, dl: *c.ImDrawList, font: *c.ImFont, fs: f32, guild: Id, uid
     if (vf.deafened()) qa.mark(r, "grid-deaf:{d}", .{uid});
     if (act.len > 0) qa.mark(r, "grid-activity:{d}", .{uid});
     if (vf.self_stream) qa.mark(r, "grid-live:{d}", .{uid});
+    if (vf.self_stream and uid != ctx.store.me and !ctx.pip) {
+        const watching = ctx.st.golive.watching == uid;
+        const lab = if (watching) i18n.tr("[assistindo]", "[watching]") else i18n.tr("[assistir]", "[watch]");
+        const bw = d.width(font, fs, lab) + 8;
+        const br: d.Rect = .{ .x = r.right() - bw - 4, .y = r.y, .w = bw, .h = r.h };
+        const bh = d.hit(ctx, 8920 + idx, br);
+        qa.mark(br, "grid-watch:{d}", .{uid});
+        if (bh.hovered) d.rect(dl, br, ctx.col(.hover), 0);
+        d.text(dl, font, fs, br.x + 4, d.centerY(r, fs), ctx.col(.accent), lab);
+        if (bh.clicked and !watching) ctx.act(.{ .golive_watch = uid });
+    }
 }
 
 /// Quem está na call, em quadros ou (nos temas de terminal) em linhas, numa região
 /// que rola quando não cabe.
 fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bool, region: [*:0]const u8) void {
+    peopleIn(ctx, n, r, cs, tty, region, false);
+}
+
+/// `strip`: a faixa embaixo da transmissão (quadros menores).
+fn peopleIn(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bool, region: [*:0]const u8, strip: bool) void {
     const list = cs.voice_members.items;
     const guild = cs.info.guild;
     const dl = d.beginRegion(ctx, region, r, 0);
@@ -341,7 +401,7 @@ fn people(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState, tty: bo
     const look = lookOf(ctx, n);
     const by_self = alone(ctx, cs);
     const row_h: f32 = if (by_self) alone_row_h + 12 else 0;
-    const g = layout(list.len, r.w - pad * 2, r.h - pad * 2 - row_h, tile_gap, if (ctx.pip) tile_min_pip else tile_min, if (by_self) tile_alone_max else tile_max);
+    const g = layout(list.len, r.w - pad * 2, r.h - pad * 2 - row_h, tile_gap, if (ctx.pip or strip) tile_min_pip else tile_min, if (by_self) tile_alone_max else tile_max);
     // Área estreita demais para um quadro (a janela sendo arrastada bem pequena).
     if (g.cols == 0 or g.rows == 0) return d.endRegion(ctx, top + r.h, r.x);
     const rows_f: f32 = @floatFromInt(g.rows);
@@ -384,10 +444,24 @@ fn aloneLine(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, fs: f32, cs: *Chann
 /// A tela da call no lugar da conversa.
 pub fn page(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) void {
     // Esc volta para a conversa, se não for para fechar outra coisa (menu, paleta,
-    // Configurações, a imagem aberta, a busca) nem estiver digitando.
-    if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and escFree(ctx)) ctx.act(.{ .show_call = 0 });
+    // Configurações, a imagem aberta, a busca) nem estiver digitando. Com a
+    // transmissão em tela cheia, primeiro volta os quadros.
+    if (c.ImGui_IsKeyPressed(c.ImGuiKey_Escape) and escFree(ctx)) {
+        if (ctx.st.golive.focus) ctx.st.golive.focus = false else ctx.act(.{ .show_call = 0 });
+    }
     qa.mark(r, "grid-view", .{});
-    people(ctx, n, r, cs, d.is(n, "variant", "irc", ""), "##call-grid");
+    const tty = d.is(n, "variant", "irc", "");
+    if (golive_view.watchingHere(ctx, cs)) {
+        const sh = golive_view.stageHeight(ctx, r.h - 16);
+        const sr: d.Rect = .{ .x = r.x + pad, .y = r.y + 8, .w = r.w - pad * 2, .h = sh };
+        if (tty) {
+            const fam = ctx.familyFor(n);
+            _ = golive_view.stageTty(ctx, ctx.dl, fam.get(.regular), ctx.th.font_size, sr, cs);
+        } else golive_view.stage(ctx, ctx.dl, sr, cs);
+        if (!ctx.st.golive.focus) peopleIn(ctx, n, .{ .x = r.x, .y = sr.bottom(), .w = r.w, .h = r.bottom() - sr.bottom() }, cs, tty, "##call-grid", true);
+        return;
+    }
+    people(ctx, n, r, cs, tty, "##call-grid");
 }
 
 /// O Esc é da tela da call? (Nada aberto por cima que ele deva fechar antes.)
@@ -408,13 +482,20 @@ pub fn dmBand(ctx: *d.Ctx, n: *const kdl.Node, r: d.Rect, cs: *ChannelState) f32
     const min_h: f32 = if (tty) 70 else 160;
     if (room < min_h) return 0;
     const rows: f32 = @floatFromInt(@max(cs.voice_members.items.len, 1));
-    const want = if (tty) rows * (ctx.th.font_size + 10) + 16 + ctl_h else r.h * 0.42;
+    const watching = golive_view.watchingHere(ctx, cs);
+    const want = if (watching) r.h * 0.62 else if (tty) rows * (ctx.th.font_size + 10) + 16 + ctl_h else r.h * 0.42;
     const h = std.math.clamp(want, min_h, room);
     const band: d.Rect = .{ .x = r.x, .y = r.y, .w = r.w, .h = h };
     d.rect(ctx.dl, band, ctx.col(.rail).alpha(0.55), 0);
     d.line(ctx.dl, band.x, band.bottom() - 0.5, band.right(), band.bottom() - 0.5, ctx.col(.border), 1);
     qa.mark(band, "grid-band", .{});
-    people(ctx, n, .{ .x = band.x, .y = band.y, .w = band.w, .h = band.h - ctl_h }, cs, tty, "##call-band");
+    const area: d.Rect = .{ .x = band.x, .y = band.y, .w = band.w, .h = band.h - ctl_h };
+    if (watching) {
+        const sr: d.Rect = .{ .x = area.x + 12, .y = area.y + 8, .w = area.w - 24, .h = area.h - 12 };
+        if (tty) {
+            _ = golive_view.stageTty(ctx, ctx.dl, ctx.familyFor(n).get(.regular), ctx.th.font_size, sr, cs);
+        } else golive_view.stage(ctx, ctx.dl, sr, cs);
+    } else people(ctx, n, area, cs, tty, "##call-band");
     buttons(ctx, ctx.dl, ctx.familyFor(n), .{ .x = band.x, .y = band.bottom() - ctl_h, .w = band.w, .h = ctl_h }, text_buttons, cs);
     return h;
 }
@@ -450,6 +531,12 @@ fn drawTime(ctx: *d.Ctx, dl: *c.ImDrawList, t: voice_timer.Timer, x: f32, row: d
     qa.mark(.{ .x = x, .y = row.y, .w = t.w, .h = row.h }, "grid-timer", .{});
     if (ctx.st.settings.open) return;
     if (vt.nextChange(voice_timer.format(&ctx.st.settings), ctx.now_ms, t.start_s)) |next| anim.atClock(next);
+}
+
+/// O botão de transmitir: abre o painel, ou para a transmissão.
+fn shareClicked(ctx: *d.Ctx, r: d.Rect) void {
+    if (ctx.st.golive.share != .off) return ctx.act(.golive_stop);
+    ctx.popup(.{ .golive = .{ .x = r.x + r.w / 2 - 170, .y = r.y - 8 } });
 }
 
 fn openMixer(ctx: *d.Ctx, r: d.Rect) void {
@@ -488,6 +575,13 @@ fn buttons(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, r: d.Rect, tty: bool,
         const mix = textButton(ctx, dl, font, fs, x, y, h, i18n.tr("[mixer]", "[mixer]"), "grid-mixer", ctx.col(.muted), 8960);
         if (mix.clicked) openMixer(ctx, r);
         x += mix.w + 8;
+        if (!ctx.pip) {
+            const on = ctx.st.golive.share != .off;
+            const sl = if (on) i18n.tr("[parar tela]", "[stop screen]") else i18n.tr("[tela]", "[screen]");
+            const sb = textButton(ctx, dl, font, fs, x, y, h, sl, "grid-share", if (on) ctx.col(.danger) else ctx.col(.muted), 8963);
+            if (sb.clicked) shareClicked(ctx, .{ .x = x, .y = y, .w = sb.w, .h = h });
+            x += sb.w + 8;
+        }
         // A call numa janela flutuante (na própria janela flutuante, não).
         if (!ctx.pip) if (ctx.st.voice) |vch| {
             const fl = textButton(ctx, dl, font, fs, x, y, h, i18n.tr("[flutuar]", "[pop out]"), "pip-call", ctx.col(.muted), 8962);
@@ -511,7 +605,9 @@ fn buttons(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, r: d.Rect, tty: bool,
     // "Call em janela flutuante": na janela principal, com a gente numa call.
     const pip_ch: ?Id = if (ctx.pip) null else ctx.st.voice;
     const pip_w: f32 = if (pip_ch != null) b + gap else 0;
-    const total = timer_w + dev_w * 2 + b + leave_w + gap * 3 + pip_w;
+    // Transmitir a tela: também só na janela principal.
+    const share_w: f32 = if (ctx.pip) 0 else b + gap;
+    const total = timer_w + dev_w * 2 + b + leave_w + gap * 3 + pip_w + share_w;
     const bar: d.Rect = .{ .x = @round(r.x + (r.w - total) / 2 - inset), .y = @round(r.y + (r.h - b) / 2 - inset), .w = total + inset * 2, .h = b + inset * 2 };
     const bar_r = std.math.clamp(ctx.th.radius * 2, 4, bar.h / 2);
     d.rect(dl, bar, ctx.col(.bg).mix(ctx.col(.elevated), 0.45), bar_r);
@@ -552,6 +648,26 @@ fn buttons(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, r: d.Rect, tty: bool,
         }
         d.tip(ctx, mr, i18n.tr("Mixer da call", "Call mixer"), mh.hovered);
         if (mh.clicked) openMixer(ctx, r);
+        x += b + gap;
+    }
+    if (!ctx.pip) {
+        const sr: d.Rect = .{ .x = x, .y = y, .w = b, .h = b };
+        const sh = d.hit(ctx, 8963, sr);
+        qa.mark(sr, "grid-share", .{});
+        const on = ctx.st.golive.share != .off;
+        const k = anim.to(anim.id("grid-share", 0), if (sh.hovered) 1 else 0, 24);
+        const fill = if (on) ctx.col(.online) else ctx.col(.elevated);
+        d.rect(dl, sr, fill.mix(if (on) d.Rgba.black else ctx.col(.hover), if (on) 0.15 * k else k), btn_r);
+        const ink = if (on) d.Rgba.white else ctx.col(.muted).mix(ctx.col(.text), k);
+        icons.screen(dl, sr.x + b / 2, sr.y + b / 2, ink.u(), on);
+        var tb2: [64]u8 = undefined;
+        const tip = switch (ctx.st.golive.share) {
+            .off => i18n.tr("Compartilhar a tela", "Share your screen"),
+            .opening => i18n.tr("Escolha o que transmitir…", "Choose what to share…"),
+            .live => if (ctx.st.golive.viewers > 0) i18n.fmt(&tb2, "Parar de transmitir ({d} assistindo)", "Stop streaming ({d} watching)", .{ctx.st.golive.viewers}) else i18n.tr("Parar de transmitir", "Stop streaming"),
+        };
+        d.tip(ctx, sr, tip, sh.hovered);
+        if (sh.clicked) shareClicked(ctx, sr);
         x += b + gap;
     }
     if (pip_ch) |vch| {

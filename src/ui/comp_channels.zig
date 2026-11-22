@@ -375,9 +375,10 @@ fn row(ctx: *d.Ctx, dl: *c.ImDrawList, fam: *d.Family, variant: Variant, cs: any
             switch (variant) {
                 .tree => {
                     var buf: [80]u8 = undefined;
-                    const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", name, w.botSuffix(u), voiceFlagsTty(vf) }) catch name;
+                    const t = std.fmt.bufPrint(&buf, "{s}   {s} {s}{s}{s}{s}", .{ if (last) " " else "│", if (speaking) "◉" else "○", name, w.botSuffix(u), voiceFlagsTty(vf), if (vf.self_stream) i18n.tr(" [ao vivo]", " [live]") else "" }) catch name;
                     d.text(dl, fam.get(.regular), fs - 2, rr.x + 4, y2 + 2, if (speaking) ctx.col(.online) else ctx.col(.muted), t);
                     w.markName(vr, "voice", uid, name);
+                    if (vf.self_stream) qa.mark(vr, "voice-live", .{});
                     y2 += 20;
                 },
                 else => {
@@ -419,6 +420,16 @@ fn badgeWidth(fam: *d.Family, count: u16) f32 {
 /// Vermelho quando foi o servidor que impôs.
 pub fn voiceFlagIcons(ctx: *d.Ctx, dl: *c.ImDrawList, f: ev.VoiceFlags, right: f32, cy: f32) f32 {
     var x = right;
+    // Transmitindo a tela: o selo vermelho, por último (à esquerda dos ícones).
+    defer if (f.self_stream) {
+        const lt = i18n.tr("AO VIVO", "LIVE");
+        const lf = ctx.ui.get(.bold);
+        const lw = d.width(lf, 9.5, lt) + 8;
+        const lr: d.Rect = .{ .x = x - lw - 2, .y = cy - 7, .w = lw, .h = 14 };
+        d.rect(dl, lr, ctx.col(.danger), 3);
+        d.text(dl, lf, 9.5, lr.x + 4, d.centerY(lr, 9.5), d.Rgba.white, lt);
+        qa.mark(lr, "voice-live", .{});
+    };
     if (f.deafened()) {
         x -= 11;
         const col = if (f.deaf) ctx.col(.danger) else ctx.col(.faint);
@@ -430,6 +441,10 @@ pub fn voiceFlagIcons(ctx: *d.Ctx, dl: *c.ImDrawList, f: ev.VoiceFlags, right: f
         const col = if (f.serverMuted()) ctx.col(.danger) else ctx.col(.faint);
         smallIcon(dl, .mic, x, cy, col);
         x -= 9;
+    }
+    if (f.self_stream) {
+        const lw = d.width(ctx.ui.get(.bold), 9.5, i18n.tr("AO VIVO", "LIVE")) + 8;
+        return right - x + lw + 2;
     }
     return right - x;
 }

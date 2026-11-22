@@ -350,3 +350,20 @@ pub fn pip(dl: *c.ImDrawList, cx_in: f32, cy_in: f32, col: u32) void {
     c.ImDrawList_AddRectEx(dl, v(cx - 8, cy - 6.5), v(cx + 8, cy + 6.5), col, 2.5, 1.6, 0);
     c.ImDrawList_AddRectFilledEx(dl, v(cx + 0.5, cy + 0.5), v(cx + 5.5, cy + 4), col, 1, 0);
 }
+
+/// Transmitir a tela: o monitor no pé, com a seta para cima (ou, `live`, o ponto
+/// de "no ar" no meio).
+pub fn screen(dl: *c.ImDrawList, cx_in: f32, cy_in: f32, col: u32, live: bool) void {
+    const cx = @round(cx_in);
+    const cy = @round(cy_in);
+    c.ImDrawList_AddRectEx(dl, v(cx - 8.5, cy - 7), v(cx + 8.5, cy + 4.5), col, 2, 1.6, 0);
+    line(dl, cx, cy + 4.5, cx, cy + 7.5, col, 1.6);
+    line(dl, cx - 4, cy + 7.8, cx + 4, cy + 7.8, col, 1.6);
+    if (live) {
+        c.ImDrawList_AddCircleFilled(dl, v(cx, cy - 1.2), 2.6, col, 0);
+    } else {
+        line(dl, cx, cy + 1.5, cx, cy - 4, col, 1.5);
+        line(dl, cx - 2.8, cy - 1.4, cx, cy - 4.2, col, 1.5);
+        line(dl, cx + 2.8, cy - 1.4, cx, cy - 4.2, col, 1.5);
+    }
+}

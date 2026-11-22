@@ -26,6 +26,8 @@ pub const Popup = union(enum) {
     gif: struct { x: f32, y: f32 },
     /// Mixer da call: volume individual de cada pessoa.
     mixer: struct { x: f32, y: f32 },
+    /// Transmitir a tela: o que e em que qualidade (ui/golive_view.zig).
+    golive: struct { x: f32, y: f32 },
     /// Caixa de entrada (aba 0 = não lidas, 1 = menções) e mensagens salvas.
     inbox: struct { tab: u8 = 0 },
     saved,
@@ -192,6 +194,8 @@ pub const State = struct {
     voice_status: @import("../core/event.zig").VoiceStatus = .disconnected,
     /// Mixer aberto na barra de voz.
     voice_mixer: bool = false,
+    /// Transmissão de tela (app_golive.zig).
+    golive: Golive = .{},
     /// A tela da call (a grade com cada um) no lugar da conversa; só vale com
     /// `voice` numa call de servidor (ui/call_grid.zig).
     call_view: bool = false,
@@ -295,4 +299,24 @@ pub const State = struct {
         s.toast.until_ms = now_ms + if (is_error) @as(i64, 6000) else 1800;
         s.toast.is_error = is_error;
     }
+};
+
+/// A transmissão de tela do lado da interface: a nossa e a que assistimos.
+pub const Golive = struct {
+    /// Transmitindo: a captura começou (`opening` enquanto o diálogo do sistema
+    /// está aberto) e o op 18 já saiu (`announced`).
+    share: enum { off, opening, live } = .off,
+    announced: bool = false,
+    /// A conexão de mídia da nossa e da assistida.
+    share_link: @import("../core/event.zig").VoiceStatus = .disconnected,
+    watch_link: @import("../core/event.zig").VoiceStatus = .disconnected,
+    /// Quantos assistem a nossa (STREAM_UPDATE).
+    viewers: u32 = 0,
+    /// Quem estamos assistindo (0 = ninguém).
+    watching: Id = 0,
+    /// A transmissão ocupa a tela da call inteira (os quadros somem).
+    focus: bool = false,
+    /// O que ficou escolhido no painel (vale até fechar o app).
+    pick_screen: u8 = 0,
+    pick_quality: u8 = 0,
 };
