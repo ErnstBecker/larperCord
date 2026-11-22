@@ -248,6 +248,12 @@ pub const Gateway = struct {
     search_indexed: bool = false,
     voice: ?*voice_mod.Voice = null,
     voice_channel: ?Id = null,
+    /// Transmitindo a tela na call da demonstração (o selo AO VIVO no nosso quadro);
+    /// e o mudo/surdo de agora, que o VOICE_STATE_UPDATE leva junto.
+    demo_streaming: bool = false,
+    demo_vf: ev.VoiceFlags = .{},
+    /// Quando "aparece" alguém assistindo a nossa transmissão.
+    demo_viewer_ms: i64 = 0,
     /// A call que começou quando entramos num canal de voz vazio (o AFK): acaba
     /// quando saímos, com o VOICE_CHANNEL_START_TIME_UPDATE de cada ponta.
     own_session: ?struct { channel: Id, start_s: i64 } = null,
@@ -924,6 +930,10 @@ pub const Gateway = struct {
                     if (call_json.voiceState(&sent.op4, v.guild, v.channel, v.mute, v.deaf)) |p| sent.op4_len.store(p.len, .release);
                     if (g.voice_channel) |old| if (v.channel != old) g.leaveDemoCall(old);
                     g.emit(.{ .voice_state = .{ .channel = v.channel, .user = me_id, .flags = .{ .self_mute = v.mute, .self_deaf = v.deaf } } });
+                    // Outra call (ou nenhuma): a transmissão acabou junto.
+                    g.demo_streaming = false;
+                    g.demo_viewer_ms = 0;
+                    g.demo_vf = .{ .self_mute = v.mute, .self_deaf = v.deaf };
                     // Saímos do canal em que só nós estávamos: a call dele acaba. Entrando
                     // num canal sem call, ela começa agora.
                     if (g.own_session) |os| if (v.channel != os.channel) {
@@ -952,8 +962,29 @@ pub const Gateway = struct {
                 },
                 .voice_flags => |f| {
                     if (g.voice) |vc| vc.setFlags(f.mute, f.deaf);
-                    g.emit(.{ .voice_state = .{ .channel = g.voice_channel, .user = me_id, .flags = .{ .self_mute = f.mute, .self_deaf = f.deaf } } });
+                    g.demo_vf = .{ .self_mute = f.mute, .self_deaf = f.deaf, .self_stream = g.demo_streaming };
+                    g.emit(.{ .voice_state = .{ .channel = g.voice_channel, .user = me_id, .flags = g.demo_vf } });
                 },
+                // Transmissão de tela: sem servidor de mídia, só o estado. A imagem é
+                // a da captura de verdade (a prévia) e, assistindo alguém, a tela
+                // sintética passando pelo caminho inteiro (net/golive_media.zig).
+                .golive_start => {
+                    if (g.voice_channel == null) continue;
+                    g.demo_streaming = true;
+                    g.demo_vf.self_stream = true;
+                    g.emit(.{ .voice_state = .{ .channel = g.voice_channel, .user = me_id, .flags = g.demo_vf } });
+                    g.emit(.{ .golive = .{ .link = .{ .watch = false, .status = .connected } } });
+                    g.demo_viewer_ms = nowMs() + 4000;
+                },
+                .golive_stop => {
+                    if (!g.demo_streaming) continue;
+                    g.demo_streaming = false;
+                    g.demo_vf.self_stream = false;
+                    g.demo_viewer_ms = 0;
+                    g.emit(.{ .voice_state = .{ .channel = g.voice_channel, .user = me_id, .flags = g.demo_vf } });
+                },
+                .golive_watch => g.emit(.{ .golive = .{ .link = .{ .watch = true, .status = .connected } } }),
+                .golive_unwatch => {},
                 .voice_volume => |v| {
                     sent.gain_milli.store(@intFromFloat(@round(std.math.clamp(v.volume, 0, 2) * 1000)), .release);
                     sent.gain_user.store(v.user, .release);
@@ -1670,6 +1701,7 @@ pub const Gateway = struct {
         var d = @min(@min(g.next_live_ms, g.next_latency_ms), g.next_flood_ms);
         if (g.call_answer) |a| d = @min(d, a.at_ms);
         if (g.pending_typing) |t| d = @min(d, t.at_ms);
+        if (g.demo_viewer_ms != 0) d = @min(d, g.demo_viewer_ms);
         if (g.status_until != 0) d = @min(d, g.status_until);
         for (g.nonce_replies.items) |r| d = @min(d, r.at_ms);
         for (g.history_replies.items) |r| d = @min(d, r.at_ms);
@@ -1837,6 +1869,11 @@ pub const Gateway = struct {
 
     fn tick(g: *Gateway, now: i64) !void {
         g.flushAcks(now);
+        // Transmitindo na demonstração: dois "assistindo" depois de alguns segundos.
+        if (g.demo_viewer_ms != 0 and now >= g.demo_viewer_ms) {
+            g.demo_viewer_ms = 0;
+            if (g.demo_streaming) g.emit(.{ .golive = .{ .viewers = 2 } });
+        }
         if (g.call_answer) |a| if (now >= a.at_ms) {
             g.call_answer = null;
             g.call_peer = .{ .channel = a.channel, .user = a.user };

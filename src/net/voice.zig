@@ -37,6 +37,10 @@ const voz = @import("../core/voz.zig");
 const ruido = @import("../core/ruido.zig");
 const nivel = @import("../core/nivel.zig");
 const voz_audio = @import("voz_audio.zig");
+const golive = @import("../core/golive.zig");
+const golive_json = @import("golive_json.zig");
+const golive_media = @import("golive_media.zig");
+const video_codec = @import("../platform/video_codec.zig");
 
 const Id = types.Id;
 const alloc = std.heap.c_allocator;
@@ -83,8 +87,18 @@ pub const Dsp = struct {
     level: bool = false,
 };
 
+/// O que esta conexão é: a call, ou uma transmissão de tela (a nossa, ou a de
+/// alguém que assistimos). A transmissão é outra conexão de voz, com o
+/// `rtc_server_id` dela no lugar do servidor e o grupo do DAVE dela.
+pub const Kind = enum(u8) { voice, stream_send, stream_watch };
+
 pub const Voice = struct {
     sink: Sink,
+    kind: Kind = .voice,
+    /// Transmissão: o servidor de mídia dela (STREAM_CREATE).
+    rtc_server_id: Id = 0,
+    /// Assistindo: quem transmite.
+    stream_user: Id = 0,
     guild: Id = 0,
     /// Muda quando alguém nos move de canal (o grupo do DAVE é o canal).
     channel: sys.Atomic(Id) = .init(0),
@@ -191,11 +205,16 @@ pub const Voice = struct {
     }
 
     fn status(v: *Voice, st: ev.VoiceStatus) void {
+        if (v.kind != .voice) return v.emit(.{ .golive = .{ .link = .{ .watch = v.kind == .stream_watch, .status = st } } });
         v.emit(.{ .voice_status = .{ .status = st, .channel = v.channel.load(.acquire) } });
     }
 
     fn notice(v: *Voice, comptime pt: []const u8, comptime en: []const u8, args: anytype) void {
-        const s = i18n.allocPrint(alloc, pt, en, args) catch return;
+        const msg = i18n.allocPrint(alloc, pt, en, args) catch return;
+        if (v.kind == .voice) return v.emit(.{ .notice = msg });
+        // Na transmissão, o aviso diz que é dela (não da call).
+        defer alloc.free(msg);
+        const s = std.mem.concat(alloc, u8, &.{ i18n.tr("transmissão: ", "stream: "), msg }) catch return;
         v.emit(.{ .notice = s });
     }
 
@@ -203,8 +222,9 @@ pub const Voice = struct {
         const v: *Voice = @ptrCast(@alignCast(data.?));
         // Compilar ou abrir imagens em paralelo não pode picotar a call.
         _ = c.SDL_SetCurrentThreadPriority(c.SDL_THREAD_PRIORITY_HIGH);
-        voz_audio.in_call.store(true, .release);
-        defer voz_audio.in_call.store(false, .release);
+        const is_call = v.kind == .voice;
+        if (is_call) voz_audio.in_call.store(true, .release);
+        defer if (is_call) voz_audio.in_call.store(false, .release);
         if (!v.local) v.status(.connecting);
         // `.fatal` não avisa o app daqui: quem decide é o gateway (net/discord.zig,
         // voiceLost). Só a demonstração, cujo gateway falso não confere `ended`.
@@ -287,6 +307,8 @@ const Worker = struct {
     ws_in: std.ArrayList(u8) = .empty,
     in_buf: [65536]u8 = undefined,
     url_buf: [320]u8 = undefined,
+    /// A transmissão de tela (`kind` diferente de `.voice`).
+    vid: Video = .{},
 
     fn run(w: *Worker) Ended {
         defer w.cleanup();
@@ -414,7 +436,9 @@ const Worker = struct {
     }
 
     fn cleanup(w: *Worker) void {
-        voz_audio.sh.call_level_db.store(voz.db_silence, .monotonic);
+        if (w.v.kind == .voice) voz_audio.sh.call_level_db.store(voz.db_silence, .monotonic);
+        if (w.v.kind == .stream_send) golive_media.setConsumer(false);
+        w.vid.deinit();
         for (w.sources[0..w.n_sources]) |*s| s.deinit();
         w.n_sources = 0;
         w.cap.release();
@@ -441,7 +465,11 @@ const Worker = struct {
             if (w.v.stopping.load(.acquire)) return .stop;
             const now = nowMs();
             const next = if (w.connected) @min(w.next_hb, w.next_frame) else w.next_hb;
-            const wait: c_int = @intCast(std.math.clamp(next - now, 0, 50));
+            // Mandando vídeo: os pacotes de um quadro saem aos poucos (de 2 em 2 ms) e o
+            // próximo quadro, que vem da thread do codificador, é buscado a cada 8 ms.
+            const sending = w.connected and w.v.kind == .stream_send;
+            const cap: i64 = if (sending) (if (w.vid.pend_i < w.vid.chunks.items.len) @as(i64, 2) else 8) else 50;
+            const wait: c_int = @intCast(std.math.clamp(next - now, 0, cap));
             w.waitSockets(wait);
             const woke = nowMs();
             w.stats.wake_late_ms = @max(w.stats.wake_late_ms, woke - now - wait);
@@ -490,8 +518,13 @@ const Worker = struct {
             _ = sys.sendTo(w.udp, &keep, &w.server);
             w.next_keepalive = now + 5000;
         }
+        switch (w.v.kind) {
+            .voice => {},
+            .stream_send => w.videoPump(now),
+            .stream_watch => w.watchTick(now),
+        }
         if (now >= w.next_frame) {
-            w.sendFrame(now);
+            if (w.v.kind == .voice) w.sendFrame(now);
             w.next_frame += frame_ms;
             // O relógio do RTP anda com o tempo, falando ou não: quem recebe
             // usa ele para saber quanto tempo passou entre duas falas.
@@ -561,8 +594,11 @@ const Worker = struct {
             std.crypto.secureZero(u8, out.items);
             out.deinit(alloc);
         }
-        // Numa DM ou grupo o `server_id` é o canal (call_json.serverId).
-        call_json.writeIdentify(&out, alloc, w.v.guild, w.v.channel.load(.acquire), w.v.user, w.v.session[0..w.v.session_len], w.v.token[0..w.v.token_len], @intCast(c.daveMaxSupportedProtocolVersion())) catch return;
+        // Numa DM ou grupo o `server_id` é o canal (call_json.serverId); numa
+        // transmissão, o servidor de mídia dela.
+        if (w.v.kind != .voice) {
+            golive_json.writeIdentify(&out, alloc, w.v.rtc_server_id, w.v.user, w.v.session[0..w.v.session_len], w.v.token[0..w.v.token_len], @intCast(c.daveMaxSupportedProtocolVersion())) catch return;
+        } else call_json.writeIdentify(&out, alloc, w.v.guild, w.v.channel.load(.acquire), w.v.user, w.v.session[0..w.v.session_len], w.v.token[0..w.v.token_len], @intCast(c.daveMaxSupportedProtocolVersion())) catch return;
         dbg("identify (DAVE até v{d})", .{c.daveMaxSupportedProtocolVersion()});
         _ = w.sendText(out.items);
     }
@@ -574,7 +610,9 @@ const Worker = struct {
             std.crypto.secureZero(u8, out.items);
             out.deinit(alloc);
         }
-        call_json.writeResume(&out, alloc, w.v.guild, w.v.channel.load(.acquire), w.v.session[0..w.v.session_len], w.v.token[0..w.v.token_len], w.last_seq) catch return;
+        if (w.v.kind != .voice) {
+            golive_json.writeResume(&out, alloc, w.v.rtc_server_id, w.v.session[0..w.v.session_len], w.v.token[0..w.v.token_len], w.last_seq) catch return;
+        } else call_json.writeResume(&out, alloc, w.v.guild, w.v.channel.load(.acquire), w.v.session[0..w.v.session_len], w.v.token[0..w.v.token_len], w.last_seq) catch return;
         dbg("resume", .{});
         _ = w.sendText(out.items);
     }
@@ -663,7 +701,7 @@ const Worker = struct {
             },
             6 => {
                 w.hb_acked = true;
-                if (w.hb_sent_ms != 0) w.v.emit(.{ .voice_ping = @intCast(std.math.clamp(nowMs() - w.hb_sent_ms, 1, 60_000)) });
+                if (w.hb_sent_ms != 0 and w.v.kind == .voice) w.v.emit(.{ .voice_ping = @intCast(std.math.clamp(nowMs() - w.hb_sent_ms, 1, 60_000)) });
             },
             2 => w.onReady(d),
             4 => w.onSession(d),
@@ -673,7 +711,7 @@ const Worker = struct {
                 w.connected = w.have_secret;
                 w.next_frame = nowMs();
                 if (w.connected) {
-                    w.announceSpeaking();
+                    if (w.v.kind == .voice) w.announceSpeaking() else if (w.v.kind == .stream_send) w.announceStream();
                     w.v.status(.connected);
                 }
             },
@@ -687,8 +725,12 @@ const Worker = struct {
                 _ = w.call_users.remove(uid);
                 w.removeSource(uid);
                 if (w.dave) |*dave| dave.removeUser(uid);
-                w.v.emit(.{ .voice_speaking = .{ .user = uid, .speaking = false } });
+                if (w.v.kind == .voice) w.v.emit(.{ .voice_speaking = .{ .user = uid, .speaking = false } });
             },
+            // Quem transmite e os SSRCs do vídeo dele.
+            12 => if (golive_json.parseVideo(d)) |rem| w.onRemoteVideo(rem),
+            // O codec da sessão mudou (alguém entrou sem suporte ao anterior).
+            14 => if (golive_json.sessionCodec(d)) |cd| w.setVideoCodec(cd),
             21 => {
                 const ver: u16 = @intCast(std.math.clamp(j.int(j.get(d, "protocol_version")) orelse 1, 0, 1));
                 const tid = j.int(j.get(d, "transition_id")) orelse 0;
@@ -706,7 +748,7 @@ const Worker = struct {
                     // Grupo novo: esquece o estado local e manda outro key package.
                     if (w.dave == null) w.initDave(ver);
                     if (w.dave) |*dave| {
-                        dave.reinit(ver, w.v.channel.load(.acquire));
+                        dave.reinit(ver, w.daveGroup());
                         w.sendKeyPackage();
                     }
                 }
@@ -745,12 +787,13 @@ const Worker = struct {
                 if (res) {
                     if (tid != 0) w.sendReady(tid);
                     dave.setLocalSsrc(w.ssrc);
+                    dave.setLocalVideo(w.vid.ssrc, w.vid.codec);
                 } else {
                     // Commit/welcome inválido: avisa (op 31), recomeça o MLS
                     // e manda um key package novo.
                     dbg("commit/welcome inválido (transição {d})", .{tid});
                     w.sendInvalid(tid);
-                    dave.reinit(dave.version, w.v.channel.load(.acquire));
+                    dave.reinit(dave.version, w.daveGroup());
                     w.sendKeyPackage();
                 }
             },
@@ -775,6 +818,15 @@ const Worker = struct {
         const ip = j.str(j.get(d, "ip")) orelse return;
         const port: u16 = @intCast(std.math.clamp(j.int(j.get(d, "port")) orelse 0, 0, 65535));
         w.ssrc = @intCast(std.math.clamp(j.int(j.get(d, "ssrc")) orelse 0, 0, std.math.maxInt(u32)));
+        if (w.v.kind == .stream_send) {
+            const ss = golive_json.readySsrcs(d);
+            w.vid.ssrc = ss.video;
+            w.vid.rtx = ss.rtx;
+            // Sequência e relógio começam em lugares quaisquer (RFC 3550).
+            w.vid.seq = @truncate(c.SDL_rand_bits());
+            w.vid.ts_origin = c.SDL_rand_bits();
+            dbg("transmissão: ssrc de vídeo {d}", .{ss.video});
+        }
         if (port == 0) return;
         w.server = parseIp4(ip, port) catch {
             w.v.notice("endereço UDP de voz inválido", "invalid voice UDP address", .{});
@@ -821,6 +873,22 @@ const Worker = struct {
     fn selectProtocol(w: *Worker, ip: []const u8, port: u16) void {
         var out: std.ArrayList(u8) = .empty;
         defer out.deinit(alloc);
+        if (w.v.kind != .voice) {
+            // Os codecs de vídeo que mandamos (transmitir) ou recebemos (assistir).
+            const send = w.v.kind == .stream_send;
+            var caps: [2]golive_json.CodecCaps = undefined;
+            var n: usize = 0;
+            for ([_]golive.Codec{ .h264, .vp8 }) |cd| {
+                const enc = send and video_codec.canEncode(cd);
+                const dec = !send and video_codec.canDecode(cd);
+                if (!enc and !dec) continue;
+                caps[n] = .{ .codec = cd, .encode = enc, .decode = dec };
+                n += 1;
+            }
+            golive_json.writeSelectProtocol(&out, alloc, ip, port, "aead_xchacha20_poly1305_rtpsize", caps[0..n]) catch return;
+            _ = w.sendText(out.items);
+            return;
+        }
         out.appendSlice(alloc, "{\"op\":1,\"d\":{\"protocol\":\"udp\",\"data\":{\"address\":") catch return;
         j.writeString(&out, alloc, ip) catch return;
         out.print(alloc, ",\"port\":{d},\"mode\":\"aead_xchacha20_poly1305_rtpsize\"}}}}}}", .{port}) catch return;
@@ -844,7 +912,16 @@ const Worker = struct {
             w.initDave(dave_ver);
             w.sendKeyPackage();
         }
-        w.announceSpeaking();
+        if (golive_json.sessionCodec(d)) |cd| w.setVideoCodec(cd);
+        switch (w.v.kind) {
+            .voice => w.announceSpeaking(),
+            .stream_send => {
+                w.announceStream();
+                golive_media.setConsumer(true);
+                golive_media.requestKeyframe();
+            },
+            .stream_watch => _ = w.sendText(golive_json.sink_wants),
+        }
         w.connected = true;
         w.next_frame = nowMs();
         w.next_keepalive = nowMs();
@@ -864,11 +941,12 @@ const Worker = struct {
     // --- DAVE --------------------------------------------------------------
 
     fn initDave(w: *Worker, version: u16) void {
-        var d = Dave.init(w.v.channel.load(.acquire), w.v.user, version) orelse {
+        var d = Dave.init(w.daveGroup(), w.v.user, version) orelse {
             std.log.warn("voz: DAVE indisponível", .{});
             return;
         };
         d.setLocalSsrc(w.ssrc);
+        d.setLocalVideo(w.vid.ssrc, w.vid.codec);
         var ui = w.call_users.keyIterator();
         while (ui.next()) |u| d.addUser(u.*);
         var si = w.call_ssrcs.iterator();
@@ -1019,10 +1097,246 @@ const Worker = struct {
         w.rtp_seq +%= 1;
     }
 
+    // --- Transmissão de tela ------------------------------------------------
+
+    /// O grupo do DAVE: o canal da call, ou o da transmissão (`rtc_server_id` − 1).
+    fn daveGroup(w: *Worker) Id {
+        return if (w.v.kind == .voice) w.v.channel.load(.acquire) else golive.daveGroup(w.v.rtc_server_id);
+    }
+
+    fn setVideoCodec(w: *Worker, cd: golive.Codec) void {
+        if (w.vid.codec == cd) return;
+        dbg("transmissão: codec {s}", .{cd.name()});
+        w.vid.codec = cd;
+        if (w.v.kind == .stream_send) {
+            golive_media.setShareCodec(cd);
+            if (w.dave) |*dave| dave.setLocalVideo(w.vid.ssrc, cd);
+        }
+    }
+
+    /// Op 5 (o "som da tela", como os clientes que transmitem) e op 12 com o
+    /// tamanho que está saindo (ou, sem quadro ainda, o da qualidade escolhida).
+    fn announceStream(w: *Worker) void {
+        var b: [96]u8 = undefined;
+        const p = std.fmt.bufPrint(&b, "{{\"op\":5,\"d\":{{\"speaking\":2,\"delay\":0,\"ssrc\":{d}}}}}", .{w.ssrc}) catch return;
+        _ = w.sendText(p);
+        var ib: [48]u8 = undefined;
+        const info = golive_media.shareInfo(&ib);
+        const q = info.quality;
+        const vw = if (info.w > 0) info.w else q.height() * 16 / 9;
+        const vh = if (info.h > 0) info.h else q.height();
+        w.sendVideoAttrs(vw, vh);
+    }
+
+    fn sendVideoAttrs(w: *Worker, vw: u32, vh: u32) void {
+        var ib: [48]u8 = undefined;
+        const q = golive_media.shareInfo(&ib).quality;
+        var vb: [640]u8 = undefined;
+        const p = golive_json.writeVideo(&vb, w.ssrc, w.vid.ssrc, w.vid.rtx, true, vw, vh, q.fps(), q.kbps()) orelse return;
+        w.vid.sent_w = vw;
+        w.vid.sent_h = vh;
+        _ = w.sendText(p);
+    }
+
+    /// Manda o quadro da vez aos poucos (o ritmo de `Video.bucket`) e, sem quadro
+    /// pendente, pega o próximo da thread do codificador.
+    fn videoPump(w: *Worker, now: i64) void {
+        if (!w.connected or !w.have_secret or w.vid.ssrc == 0) return;
+        const vd = &w.vid;
+        // Ritmo: tokens em bytes; ~6× o alvo, entre 12 e 40 Mbit/s.
+        var ib: [48]u8 = undefined;
+        const kbps = golive_media.shareInfo(&ib).quality.kbps();
+        const rate: i64 = @divTrunc(std.math.clamp(@as(i64, kbps) * 6, 12_000, 40_000), 8); // bytes por ms
+        if (vd.bucket_ms == 0) vd.bucket_ms = now;
+        vd.bucket = @min(vd.bucket + (now - vd.bucket_ms) * rate, 16 * 1200);
+        vd.bucket_ms = now;
+        if (vd.pend_i >= vd.chunks.items.len) w.nextVideoFrame(now);
+        while (vd.pend_i < vd.chunks.items.len and vd.bucket > 0) {
+            const ch = vd.chunks.items[vd.pend_i];
+            const body = vd.pend.items[ch.off..][0..ch.len];
+            w.sendVideoPacket(ch.prefix[0..ch.plen], body, ch.marker);
+            vd.bucket -= @intCast(ch.plen + ch.len + golive.header_len);
+            vd.pend_i += 1;
+        }
+        // Sender Report a cada segundo: quem recebe acerta o relógio do vídeo.
+        if (vd.packets > 0 and now >= vd.next_sr) {
+            vd.next_sr = now + 1000;
+            var sr: [28]u8 = undefined;
+            golive.senderReport(&sr, vd.ssrc, @import("fake_gateway.zig").nowMs(), vd.last_ts, vd.packets, vd.octets);
+            w.sendRtcp(&sr);
+        }
+    }
+
+    fn nextVideoFrame(w: *Worker, now: i64) void {
+        const vd = &w.vid;
+        if (!golive_media.takeFrame(&vd.frame)) return;
+        const f = &vd.frame;
+        if (f.data.items.len == 0) return;
+        if (f.w != vd.sent_w or f.h != vd.sent_h) w.sendVideoAttrs(f.w, f.h);
+        // DAVE: o quadro inteiro é cifrado antes de virar pacotes.
+        var data: []const u8 = f.data.items;
+        if (w.dave) |*dave| if (dave.enabled) {
+            const cap = dave.maxCiphertext(c.DAVE_MEDIA_TYPE_VIDEO, data.len);
+            vd.dave_buf.resize(alloc, cap) catch return;
+            const n = dave.encryptMedia(c.DAVE_MEDIA_TYPE_VIDEO, vd.ssrc, data, vd.dave_buf.items);
+            if (n == 0) {
+                // Sem a chave ainda, ou falhou: o próximo vai como quadro-chave.
+                golive_media.requestKeyframe();
+                return;
+            }
+            data = vd.dave_buf.items[0..n];
+        };
+        vd.pend.clearRetainingCapacity();
+        vd.pend.appendSlice(alloc, data) catch return;
+        vd.chunks.clearRetainingCapacity();
+        vd.pend_i = 0;
+        var sink: ChunkSink = .{ .vd = vd };
+        switch (vd.codec) {
+            .vp8 => {
+                _ = golive.packetizeVp8(vd.pend.items, golive.max_payload, vd.picture_id, &sink);
+                vd.picture_id +%= 1;
+            },
+            else => _ = golive.packetizeH264(vd.pend.items, golive.max_payload, &sink),
+        }
+        // O relógio de 90 kHz anda com o tempo da captura.
+        if (vd.ts_base_ms == 0) vd.ts_base_ms = f.ms;
+        vd.last_ts = vd.ts_origin +% @as(u32, @truncate(@as(u64, @intCast(@max(f.ms - vd.ts_base_ms, 0))) * 90));
+        if (debugOn() and f.key) dbg("transmissão: quadro-chave {d}x{d}, {d} bytes, {d} pacotes", .{ f.w, f.h, data.len, vd.chunks.items.len });
+        _ = now;
+    }
+
+    /// Cabeçalho com a extensão em claro; o corpo da extensão, o prefixo (FU-A,
+    /// descritor VP8) e a carga, cifrados.
+    fn sendVideoPacket(w: *Worker, prefix: []const u8, body: []const u8, marker: bool) void {
+        const vd = &w.vid;
+        var hdr: [golive.header_len]u8 = undefined;
+        golive.writeHeader(&hdr, vd.codec.payloadType(), marker, vd.seq, vd.last_ts, vd.ssrc);
+        vd.seq +%= 1;
+        var plain: [golive.ext_body.len + 8 + golive.max_payload]u8 = undefined;
+        var n: usize = 0;
+        @memcpy(plain[0..golive.ext_body.len], &golive.ext_body);
+        n += golive.ext_body.len;
+        @memcpy(plain[n..][0..prefix.len], prefix);
+        n += prefix.len;
+        if (n + body.len > plain.len) return;
+        @memcpy(plain[n..][0..body.len], body);
+        n += body.len;
+        if (w.sealAndSend(&hdr, plain[0..n])) {
+            vd.packets +%= 1;
+            vd.octets +%= @intCast(prefix.len + body.len);
+        }
+    }
+
+    /// AEAD dos modos "rtpsize": `aad` em claro, o resto cifrado, a etiqueta e os 4
+    /// bytes do contador no fim.
+    fn sealAndSend(w: *Worker, aad: []const u8, plain: []const u8) bool {
+        if (!sys.valid(w.udp) or !w.have_secret) return false;
+        var buf: [32 + golive.ext_body.len + 8 + golive.max_payload + 16 + 4]u8 = undefined;
+        if (aad.len + plain.len + 20 > buf.len) return false;
+        @memcpy(buf[0..aad.len], aad);
+        var nonce: [24]u8 = @splat(0);
+        w.nonce +%= 1;
+        std.mem.writeInt(u32, nonce[0..4], w.nonce, .big);
+        var tag: [16]u8 = undefined;
+        const aead = std.crypto.aead.chacha_poly.XChaCha20Poly1305;
+        aead.encrypt(buf[aad.len..][0..plain.len], &tag, plain, aad, nonce, w.secret);
+        @memcpy(buf[aad.len + plain.len ..][0..16], &tag);
+        @memcpy(buf[aad.len + plain.len + 16 ..][0..4], nonce[0..4]);
+        return sys.sendTo(w.udp, buf[0 .. aad.len + plain.len + 20], &w.server) >= 0;
+    }
+
+    /// RTCP: os 8 primeiros bytes (cabeçalho e SSRC de quem manda) vão em claro.
+    fn sendRtcp(w: *Worker, pkt: []const u8) void {
+        if (pkt.len < 8) return;
+        _ = w.sealAndSend(pkt[0..8], pkt[8..]);
+    }
+
+    /// RTCP de quem assiste: PLI/FIR pedem um quadro-chave.
+    fn onRtcp(w: *Worker, buf: []const u8) void {
+        if (buf.len < 8 + 16 + 4 or !w.have_secret) return;
+        const cipher = buf[8 .. buf.len - 20];
+        var tag: [16]u8 = undefined;
+        @memcpy(&tag, buf[buf.len - 20 ..][0..16]);
+        var nonce: [24]u8 = @splat(0);
+        @memcpy(nonce[0..4], buf[buf.len - 4 ..]);
+        var plain: [1500]u8 = undefined;
+        if (8 + cipher.len > plain.len) return;
+        @memcpy(plain[0..8], buf[0..8]);
+        const aead = std.crypto.aead.chacha_poly.XChaCha20Poly1305;
+        aead.decrypt(plain[8..][0..cipher.len], cipher, tag, buf[0..8], nonce, w.secret) catch return;
+        if (golive.wantsKeyframe(plain[0 .. 8 + cipher.len], w.vid.ssrc)) {
+            dbg("transmissão: pediram quadro-chave", .{});
+            golive_media.requestKeyframe();
+        }
+    }
+
+    /// Op 12 do servidor: quem transmite, com o áudio e o vídeo dele.
+    fn onRemoteVideo(w: *Worker, rem: golive_json.Remote) void {
+        w.addCallUser(rem.user);
+        if (w.v.kind != .stream_watch) return;
+        if (rem.user != w.v.stream_user) return;
+        dbg("transmissão: {d} manda vídeo no ssrc {d} (áudio {d})", .{ rem.user, rem.video, rem.audio });
+        if (rem.audio != 0) {
+            _ = w.sourceFor(rem.audio, rem.user);
+            w.call_ssrcs.put(alloc, rem.audio, rem.user) catch {};
+            if (w.dave) |*dave| dave.setSsrcUser(rem.audio, rem.user);
+        }
+        if (rem.video != 0 and rem.video != w.vid.remote) {
+            w.vid.remote = rem.video;
+            w.vid.asm_.reset();
+            w.call_ssrcs.put(alloc, rem.video, rem.user) catch {};
+            if (w.dave) |*dave| dave.setSsrcUser(rem.video, rem.user);
+            golive_media.requestWatchKeyframe();
+        }
+    }
+
+    /// Assistindo: pede quadro-chave quando o decodificador perdeu o fio (no máximo
+    /// um pedido a cada meio segundo).
+    fn watchTick(w: *Worker, now: i64) void {
+        if (!w.connected or w.vid.remote == 0 or now < w.vid.next_pli) return;
+        if (!golive_media.takeNeedKey()) return;
+        w.vid.next_pli = now + 500;
+        var p: [12]u8 = undefined;
+        golive.pli(&p, w.ssrc, w.vid.remote);
+        w.sendRtcp(&p);
+        dbg("transmissão: pedimos quadro-chave", .{});
+    }
+
+    fn onVideo(w: *Worker, ssrc: u32, cd: golive.Codec, seq: u16, ts: u32, marker: bool, payload: []const u8) void {
+        const vd = &w.vid;
+        // Sem o op 12 ainda: o primeiro SSRC de vídeo que aparecer é o dele.
+        if (vd.remote == 0) {
+            vd.remote = ssrc;
+            if (w.dave) |*dave| if (w.v.stream_user != 0) dave.setSsrcUser(ssrc, w.v.stream_user);
+        }
+        if (ssrc != vd.remote) return;
+        vd.asm_.codec = cd;
+        const f = vd.asm_.push(alloc, seq, ts, marker, payload) orelse return;
+        var data = f.data;
+        // Quadro do DAVE (termina com 0xFAFA): decifra inteiro.
+        if (data.len >= 2 and data[data.len - 1] == 0xFA and data[data.len - 2] == 0xFA) {
+            const dave = if (w.dave) |*d| d else return;
+            vd.dave_buf.resize(alloc, data.len + 64) catch return;
+            const n = dave.decryptMedia(c.DAVE_MEDIA_TYPE_VIDEO, ssrc, w.v.stream_user, data, vd.dave_buf.items) orelse {
+                w.stats.undecrypted += 1;
+                golive_media.requestWatchKeyframe();
+                return;
+            };
+            data = vd.dave_buf.items[0..n];
+        }
+        golive_media.pushEncoded(cd, data, f.loss);
+    }
+
     fn onRtp(w: *Worker, buf: []const u8) void {
         if (buf.len < 12 + 16 + 4 or !w.have_secret) return;
         if ((buf[0] >> 6) != 2) return;
-        if ((buf[1] & 0x7f) != 120) return; // só Opus (RTCP e o resto ficam de fora)
+        if (golive.isRtcp(buf)) {
+            if (w.v.kind == .stream_send) w.onRtcp(buf);
+            return;
+        }
+        const pt = buf[1] & 0x7f;
+        const vcodec = golive.Codec.ofPayloadType(pt);
+        if (pt != 120 and !(vcodec != null and w.v.kind == .stream_watch)) return; // Opus, e o vídeo de quem assistimos
         const ssrc = std.mem.readInt(u32, buf[8..12], .big);
         if (ssrc == w.ssrc) return;
         // Nos modos "rtpsize" só o cabeçalho fixo, os CSRC e os 4 bytes do
@@ -1057,6 +1371,7 @@ const Worker = struct {
         if (ext_words * 4 > end) return;
         var frame: []const u8 = plain[ext_words * 4 .. end];
         if (frame.len == 0) return;
+        if (vcodec) |cd| return w.onVideo(ssrc, cd, std.mem.readInt(u16, buf[2..4], .big), std.mem.readInt(u32, buf[4..8], .big), buf[1] & 0x80 != 0, frame);
         const src = w.sourceFor(ssrc, 0) orelse return;
         const seq = std.mem.readInt(u16, buf[2..4], .big);
         const ts = std.mem.readInt(u32, buf[4..8], .big);
@@ -1092,6 +1407,16 @@ const Worker = struct {
     const spec: c.SDL_AudioSpec = voz_audio.spec;
 
     fn initAudio(w: *Worker) bool {
+        // Transmitindo: sem som (só a tela). Assistindo: só a saída, para o som da transmissão.
+        if (w.v.kind == .stream_send) return true;
+        if (w.v.kind == .stream_watch) {
+            if (voz_audio.acquire()) {
+                w.audio_on = true;
+                w.out.open(nowMs());
+                w.updatePull();
+            }
+            return w.out.dev != 0;
+        }
         var err: c_int = 0;
         w.encoder = c.opus_encoder_create(opus_rate, channels, c.OPUS_APPLICATION_VOIP, &err);
         if (err == c.OPUS_OK) {
@@ -1153,6 +1478,7 @@ const Worker = struct {
     /// Avisa a interface quando o microfone ou a saída mudam de situação: ela
     /// mostra na barra de voz, em vez de ficar calada sem explicação.
     fn reportAudio(w: *Worker) void {
+        if (w.v.kind != .voice) return;
         const mic_ok = !w.mic.failed();
         const out_ok = w.out.dev != 0;
         if (mic_ok == w.mic_ok_sent and out_ok == w.out_ok_sent) return;
@@ -1210,7 +1536,7 @@ const Worker = struct {
         if (!src.speaking or now - src.last_emit_ms > 1000) {
             src.speaking = true;
             src.last_emit_ms = now;
-            if (src.user != 0) w.v.emit(.{ .voice_speaking = .{ .user = src.user, .speaking = true } });
+            if (src.user != 0 and w.v.kind == .voice) w.v.emit(.{ .voice_speaking = .{ .user = src.user, .speaking = true } });
         }
         src.last_ms = now;
         w.stats.packets += 1;
@@ -1349,8 +1675,60 @@ const Worker = struct {
     fn expireSpeakers(w: *Worker, now: i64) void {
         for (w.sources[0..w.n_sources]) |*s| if (s.speaking and now - s.last_ms > 400) {
             s.speaking = false;
-            if (s.user != 0) w.v.emit(.{ .voice_speaking = .{ .user = s.user, .speaking = false } });
+            if (s.user != 0 and w.v.kind == .voice) w.v.emit(.{ .voice_speaking = .{ .user = s.user, .speaking = false } });
         };
+    }
+};
+
+
+/// O vídeo da transmissão (só nos `kind` de transmissão).
+const Video = struct {
+    codec: golive.Codec = .h264,
+    // Mandando.
+    ssrc: u32 = 0,
+    rtx: u32 = 0,
+    seq: u16 = 0,
+    packets: u32 = 0,
+    octets: u32 = 0,
+    next_sr: i64 = 0,
+    last_ts: u32 = 0,
+    ts_origin: u32 = 0,
+    ts_base_ms: i64 = 0,
+    picture_id: u15 = 0,
+    sent_w: u32 = 0,
+    sent_h: u32 = 0,
+    frame: golive_media.EncFrame = .{},
+    /// O quadro (cifrado) saindo aos poucos e os pedaços dele.
+    pend: std.ArrayList(u8) = .empty,
+    chunks: std.ArrayList(Chunk) = .empty,
+    pend_i: usize = 0,
+    bucket: i64 = 16 * 1200,
+    bucket_ms: i64 = 0,
+    dave_buf: std.ArrayList(u8) = .empty,
+    // Assistindo.
+    remote: u32 = 0,
+    asm_: golive.Assembler = .{},
+    next_pli: i64 = 0,
+
+    fn deinit(vd: *Video) void {
+        vd.frame.data.deinit(alloc);
+        vd.pend.deinit(alloc);
+        vd.chunks.deinit(alloc);
+        vd.dave_buf.deinit(alloc);
+        vd.asm_.deinit(alloc);
+    }
+};
+
+/// Um pacote do quadro pendente: o prefixo (FU-A, descritor VP8) e o trecho dele.
+const Chunk = struct { prefix: [4]u8, plen: u8, off: u32, len: u32, marker: bool };
+
+const ChunkSink = struct {
+    vd: *Video,
+
+    pub fn packet(s: *ChunkSink, prefix: []const u8, body: []const u8, marker: bool) void {
+        var ch: Chunk = .{ .prefix = @splat(0), .plen = @intCast(prefix.len), .off = @intCast(@intFromPtr(body.ptr) - @intFromPtr(s.vd.pend.items.ptr)), .len = @intCast(body.len), .marker = marker };
+        @memcpy(ch.prefix[0..prefix.len], prefix);
+        s.vd.chunks.append(alloc, ch) catch {};
     }
 };
 
@@ -1478,6 +1856,9 @@ const Dave = struct {
     ssrc_users: std.AutoHashMapUnmanaged(u32, Id) = .empty,
     decryptors: std.AutoHashMapUnmanaged(u32, c.DAVEDecryptorHandle) = .empty,
     local_ssrc: u32 = 0,
+    /// O SSRC do vídeo que mandamos (transmissão) e o codec dele.
+    video_ssrc: u32 = 0,
+    video_codec: golive.Codec = .h264,
 
     fn init(group: Id, me: Id, version: u16) ?Dave {
         var d: Dave = .{ .group = group, .me = me, .version = version, .pending_version = version };
@@ -1660,6 +2041,7 @@ const Dave = struct {
         if (self_ratchet != null) {
             c.daveEncryptorSetKeyRatchet(d.encryptor, self_ratchet);
             c.daveEncryptorAssignSsrcToCodec(d.encryptor, d.local_ssrc, c.DAVE_CODEC_OPUS);
+            if (d.video_ssrc != 0) c.daveEncryptorAssignSsrcToCodec(d.encryptor, d.video_ssrc, daveCodec(d.video_codec));
             c.daveKeyRatchetDestroy(self_ratchet);
         }
         d.enabled = c.daveEncryptorHasKeyRatchet(d.encryptor);
@@ -1688,15 +2070,27 @@ const Dave = struct {
     }
 
     fn encrypt(d: *Dave, ssrc: u32, frame: []const u8, out: []u8) usize {
-        const cap = c.daveEncryptorGetMaxCiphertextByteSize(d.encryptor, c.DAVE_MEDIA_TYPE_AUDIO, frame.len);
+        return d.encryptMedia(c.DAVE_MEDIA_TYPE_AUDIO, ssrc, frame, out);
+    }
+
+    fn maxCiphertext(d: *Dave, media: c.DAVEMediaType, n: usize) usize {
+        return c.daveEncryptorGetMaxCiphertextByteSize(d.encryptor, media, n);
+    }
+
+    fn encryptMedia(d: *Dave, media: c.DAVEMediaType, ssrc: u32, frame: []const u8, out: []u8) usize {
+        const cap = c.daveEncryptorGetMaxCiphertextByteSize(d.encryptor, media, frame.len);
         if (cap > out.len) return 0;
         var written: usize = 0;
-        const rc = c.daveEncryptorEncrypt(d.encryptor, c.DAVE_MEDIA_TYPE_AUDIO, ssrc, frame.ptr, frame.len, out.ptr, out.len, &written);
+        const rc = c.daveEncryptorEncrypt(d.encryptor, media, ssrc, frame.ptr, frame.len, out.ptr, out.len, &written);
         if (rc != c.DAVE_ENCRYPTOR_RESULT_CODE_SUCCESS) return 0;
         return written;
     }
 
     fn decrypt(d: *Dave, ssrc: u32, user: Id, frame: []const u8, out: []u8) ?usize {
+        return d.decryptMedia(c.DAVE_MEDIA_TYPE_AUDIO, ssrc, user, frame, out);
+    }
+
+    fn decryptMedia(d: *Dave, media: c.DAVEMediaType, ssrc: u32, user: Id, frame: []const u8, out: []u8) ?usize {
         // O decryptor aparece quando o SSRC é anunciado (op 5); se o áudio
         // chegou antes e já sabemos de quem é, cria agora.
         if (d.decryptors.get(ssrc) == null) {
@@ -1705,10 +2099,10 @@ const Dave = struct {
             d.setSsrcUser(ssrc, owner);
         }
         const dec = d.decryptors.get(ssrc) orelse return null;
-        const cap = c.daveDecryptorGetMaxPlaintextByteSize(dec, c.DAVE_MEDIA_TYPE_AUDIO, frame.len);
+        const cap = c.daveDecryptorGetMaxPlaintextByteSize(dec, media, frame.len);
         if (cap > out.len) return null;
         var written: usize = 0;
-        const rc = c.daveDecryptorDecrypt(dec, c.DAVE_MEDIA_TYPE_AUDIO, frame.ptr, frame.len, out.ptr, out.len, &written);
+        const rc = c.daveDecryptorDecrypt(dec, media, frame.ptr, frame.len, out.ptr, out.len, &written);
         if (rc != c.DAVE_DECRYPTOR_RESULT_CODE_SUCCESS) return null;
         return written;
     }
@@ -1717,4 +2111,20 @@ const Dave = struct {
         d.local_ssrc = ssrc;
         if (d.encryptor != null) c.daveEncryptorAssignSsrcToCodec(d.encryptor, ssrc, c.DAVE_CODEC_OPUS);
     }
+
+    fn setLocalVideo(d: *Dave, ssrc: u32, cd: golive.Codec) void {
+        d.video_ssrc = ssrc;
+        d.video_codec = cd;
+        if (ssrc != 0 and d.encryptor != null) c.daveEncryptorAssignSsrcToCodec(d.encryptor, ssrc, daveCodec(cd));
+    }
 };
+
+fn daveCodec(cd: golive.Codec) c.DAVECodec {
+    return switch (cd) {
+        .h264 => c.DAVE_CODEC_H264,
+        .vp8 => c.DAVE_CODEC_VP8,
+        .vp9 => c.DAVE_CODEC_VP9,
+        .h265 => c.DAVE_CODEC_H265,
+        .av1 => c.DAVE_CODEC_AV1,
+    };
+}

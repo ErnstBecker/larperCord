@@ -39,6 +39,7 @@ const status_proto = @import("status_proto.zig");
 const leitura = @import("../core/leitura.zig");
 const read_json = @import("read_state_json.zig");
 const voice_mod = @import("voice.zig");
+const golive_gw = @import("golive_gw.zig");
 const voz_movido = @import("voz_movido.zig");
 const call_json = @import("call_json.zig");
 const voice_info = @import("voice_info_json.zig");
@@ -128,6 +129,8 @@ pub const Gateway = struct {
     voice_wait_until: i64 = 0,
     /// Alguém nos moveu de canal há pouco: uma queda agora pede o canal de novo.
     voice_moved: voz_movido.Movido = .{},
+    /// A nossa transmissão de tela e a que assistimos (net/golive_gw.zig).
+    golive: golive_gw.Links = .{},
     /// Status escolhido (também vai no IDENTIFY de uma sessão nova).
     status: types.Status = .online,
     /// Status personalizado e o resto da conta (net/conta_net.zig).
@@ -245,6 +248,7 @@ pub const Gateway = struct {
         g.members_ask.deinit(alloc);
         g.voice_volumes.deinit(alloc);
         g.voice_dsp.deinit(alloc);
+        g.golive.deinit();
         g.acks.deinit(alloc);
         g.conta.deinit();
         for (g.fav_batch.items) |f| freeCommand(.{ .gif_favorite = f });
@@ -577,12 +581,13 @@ pub const Gateway = struct {
             g.flushAcks();
             if (g.stopping) return .reconnect;
             g.voiceTick();
+            g.golive.tick(g);
             if (g.ws_end) |e| return e;
 
             // Dorme até chegar algo no socket, um comando ou o próximo
             // heartbeat. Em call, a thread de voz é conferida 20x por segundo.
             const now = nowMs();
-            const voice_busy = g.voice != null or g.voice_wait_until != 0;
+            const voice_busy = g.voice != null or g.voice_wait_until != 0 or g.golive.busy();
             const cap: i64 = if (voice_busy or !sys.valid(g.wake.read)) 50 else 1000;
             // (A fila vai no relógio monotônico: aqui só importa quanto falta.)
             const queued = if (g.ws_ready) blk: {
@@ -1601,6 +1606,7 @@ pub const Gateway = struct {
             if (j.id(j.get(d, "channel_id"))) |id| g.emit(.{ .pins_changed = id });
             return;
         }
+        if (std.mem.startsWith(u8, t, "STREAM_") and g.golive.dispatch(g, t, d)) return;
         if (std.mem.eql(u8, t, "VOICE_STATE_UPDATE")) {
             const user = j.id(j.get(d, "user_id")) orelse return;
             const chan = j.id(j.get(d, "channel_id"));
@@ -3038,7 +3044,7 @@ pub const Gateway = struct {
     /// Comando que é escrito no WebSocket (não passa pelo REST).
     fn usesGateway(cmd: ev.Command) bool {
         return switch (cmd) {
-            .subscribe_guild, .channel_info, .set_status, .set_activity, .set_game, .join_voice, .voice_flags => true,
+            .subscribe_guild, .channel_info, .set_status, .set_activity, .set_game, .join_voice, .voice_flags, .golive_start, .golive_stop, .golive_watch, .golive_unwatch => true,
             // Os eventos da interação vão para a sessão do READY (session_id).
             .interaction => |ic| ic == .send,
             else => false,
@@ -3909,6 +3915,8 @@ pub const Gateway = struct {
     }
 
     fn stopVoice(g: *Gateway) void {
+        // Fora da call, transmissão nenhuma continua (o Discord encerra as dele também).
+        g.golive.stopAll(g, true);
         g.killVoice();
         g.voice_wait_until = 0;
         g.voice_moved.clear();
@@ -4584,6 +4592,7 @@ pub const Gateway = struct {
                     g.voice_channel = 0;
                 }
             },
+            .golive_start, .golive_stop, .golive_watch, .golive_unwatch => g.golive.command(g, cmd),
             .voice_flags => |f| {
                 g.voice_mute = f.mute;
                 g.voice_deaf = f.deaf;

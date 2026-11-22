@@ -175,6 +175,8 @@ pub const Event = union(enum) {
     voice_ping: u32,
     /// O microfone ou a saída da call abriram? (a barra de voz avisa)
     voice_audio: struct { mic_ok: bool, out_ok: bool },
+    /// Transmissão de tela (net/golive_gw.zig).
+    golive: Golive,
     /// CALL_CREATE / CALL_UPDATE / CALL_DELETE de uma DM ou grupo.
     call: Call,
     /// CHANNEL_INFO (resposta ao op 43): os canais de voz do servidor que têm call
@@ -261,6 +263,29 @@ pub const Event = union(enum) {
 pub const Connection = enum { connecting, ready, reconnecting, rejected, failed, offline };
 
 pub const VoiceStatus = enum { disconnected, connecting, connected };
+
+/// Por que uma transmissão acabou.
+pub const GoliveReason = enum(u8) {
+    /// Quem transmitia encerrou.
+    ended,
+    /// A transmissão está cheia (limite de quem assiste).
+    full,
+    unauthorized,
+    /// A conexão dela caiu e não voltou.
+    dropped,
+    /// Saímos da call (ou a sessão do gateway caiu).
+    left,
+    other,
+};
+
+pub const Golive = union(enum) {
+    /// A conexão de mídia da nossa transmissão (`watch` falso) ou da assistida.
+    link: struct { watch: bool, status: VoiceStatus },
+    /// Acabou (STREAM_DELETE, queda, saímos da call).
+    ended: struct { watch: bool, user: Id, reason: GoliveReason },
+    /// Quantos assistem a nossa (STREAM_UPDATE).
+    viewers: u32,
+};
 
 /// Call numa DM ou grupo. `ringing_me`: está tocando para nós; `ringing`:
 /// quantos outros ainda estão sendo chamados. `ended`: a call acabou.
@@ -375,6 +400,13 @@ pub const Command = union(enum) {
     join_voice: struct { guild: Id, channel: ?Id, mute: bool = false, deaf: bool = false },
     /// Mudou mudo/ensurdecer com a call já conectada.
     voice_flags: struct { mute: bool, deaf: bool },
+    /// Transmitir a tela na call em que estamos (op 18); a captura já começou
+    /// (net/golive_media.zig).
+    golive_start: struct { guild: Id, channel: Id },
+    golive_stop,
+    /// Assistir a transmissão de `user` na call (op 20); `unwatch` para.
+    golive_watch: struct { guild: Id, channel: Id, user: Id },
+    golive_unwatch,
     /// Volume individual de quem está falando (0..2).
     voice_volume: struct { user: Id, volume: f32 },
     /// "Tirar ruído" e "Igualar volume" de uma pessoa (mixer da call).
@@ -493,6 +525,10 @@ pub const Command = union(enum) {
     shutdown,
 };
 
+/// O que transmitir: a tela `screen` (índice em platform/tela.screens; X11 e
+/// Windows), ou o que o sistema perguntar (Wayland), na qualidade `quality`.
+pub const GoliveShare = struct { screen: u8 = 0, quality: u8 = 0 };
+
 pub const Action = union(enum) {
     search_messages: SearchRequest,
     /// Aceitar/recusar pedido de mensagem, pôr/tirar gente do grupo, sair dele.
@@ -518,6 +554,12 @@ pub const Action = union(enum) {
     set_voice_dsp: struct { user: Id, denoise: bool, level: bool },
     /// Abre/fecha o mixer de voz (a lista de quem está na call com volumes).
     toggle_voice_mixer,
+    /// Transmissão de tela: começar (com a escolha do painel), parar, assistir
+    /// alguém e parar de assistir.
+    golive_share: GoliveShare,
+    golive_stop,
+    golive_watch: Id,
+    golive_unwatch,
     /// Call na DM ou grupo: começa (ou entra na que já existe), atende e
     /// recusa a que está tocando.
     start_call: Id,

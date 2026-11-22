@@ -1197,12 +1197,14 @@ pub const Store = struct {
     pub fn apply(s: *Store, ev: Event, now_ms: i64) !void {
         // O que chega o tempo todo e não aparece na caixa de entrada não conta.
         switch (ev) {
-            .typing_start, .presence_update, .member_face, .voice_state, .voice_member_flags, .voice_speaking, .voice_ping, .voice_audio, .voice_status, .call, .channel_info, .voice_start, .latency, .status, .net_fail, .notice, .member_list, .profile, .relationship, .note, .app_icon, .pins, .pins_changed, .invite, .read, .thread_members, .thread_joined, .thread_open, .threads_page, .conta => {},
+            .typing_start, .presence_update, .member_face, .voice_state, .voice_member_flags, .voice_speaking, .voice_ping, .voice_audio, .voice_status, .golive, .call, .channel_info, .voice_start, .latency, .status, .net_fail, .notice, .member_list, .profile, .relationship, .note, .app_icon, .pins, .pins_changed, .invite, .read, .thread_members, .thread_joined, .thread_open, .threads_page, .conta => {},
             else => s.rev +%= 1,
         }
         switch (ev) {
             // Quem cuida é a busca (ver App.afterEvent).
             .search_results, .invite_joined, .invite_created, .conta, .bans => {},
+            // A transmissão de tela é do app (app_golive.zig).
+            .golive => {},
             // O castigo aparece na hora (a lista de membros confirma depois).
             .moderated => |m| if (m.ok and (m.acao == .timeout or m.acao == .untimeout))
                 s.setTimeout(m.guild, m.user, if (m.acao == .timeout) m.ate_s else 0),
