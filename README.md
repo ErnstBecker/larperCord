@@ -80,6 +80,15 @@ The official client is a whole browser dressed up as an app. On the same PC:
   Accept and Decline, a ringtone (silent in Do Not Disturb or a muted conversation), a system notification
   and a taskbar flash, even from the tray. Right-click the mic or headphone button to switch devices
   mid-call; `Ctrl+Shift+M` mutes and `Ctrl+Shift+D` deafens.
+- **Screen sharing (Go Live)**, both ways. **Watch**: whoever is streaming has a LIVE badge in the
+  channel list and a Watch button on their tile; the stream fills the call screen with everyone's tiles
+  in a strip below, and "Stream only" (or a double click) hides the tiles. **Share**: the screen button in
+  the call bar asks what and in which quality (720p 30, 1080p 30, 720p 60, 480p 15); your tile shows
+  your own screen and how many are watching. On Wayland the system's own dialog picks a screen or a
+  window (xdg-desktop-portal and PipeWire); on X11 and Windows you pick a whole screen in the app. It
+  needs FFmpeg: an H.264 encoder to share (libx264, or NVENC, AMF, Quick Sync, Media Foundation,
+  OpenH264) and the decoder to watch, H.264 or VP8. Video goes end-to-end encrypted with DAVE, like
+  the voice. Stream audio from others plays; sharing sends only the picture for now.
 - **Discord interactions**: right-click menus on messages, users, channels and servers;
   a hover action bar; **replies** (with the little curve and a click that jumps to the
   original); **edit** (`↑` in the empty box edits your last one); **delete**; **reactions**;
@@ -278,7 +287,8 @@ Remove-Item Env:LARPER_TOKEN
 The variable only counts when the app starts: if larperCord is already open, even only in the tray,
 quit it first (**Quit** in the tray icon's menu).
 
-`--demo` forces demo mode even with a token. Still missing: screen sharing and camera. Channels
+`--demo` forces demo mode even with a token. Still missing: camera, and sound when you share your
+screen. Channels
 without access only show a notice. Notifications go through `notify-send` on Linux (from libnotify)
 and through the tray on Windows, and clicking one doesn't open the channel yet. Voice uses the
 system's audio backend through SDL3 and only starts its thread when you join a call.
@@ -312,7 +322,8 @@ On Linux you need **Zig 0.17**, **SDL3**, **FreeType**, **fontconfig** and **lib
 Recommended fonts on Linux: Inter, JetBrains Mono and Noto Color Emoji (fontconfig picks substitutes if one is
 missing). On Windows the app uses Segoe UI, Consolas and Segoe UI Emoji.
 Optional: **FFmpeg 7, 8 or 9** (libavformat 61–63) to play video inside the app; any other version
-is ignored and the video opens in the browser.
+is ignored and the video opens in the browser. Screen sharing uses the same FFmpeg, with an H.264
+encoder (libx264 in most distros), libavdevice on X11, and xdg-desktop-portal with PipeWire on Wayland.
 
 ```bash
 # Arch
@@ -393,6 +404,7 @@ swapping the fake gateway for the real one doesn't touch the UI.
 - [ ] Native notifications through D-Bus on Linux
 - [x] Voice (DAVE/MLS + Opus)
 - [x] Calls in DMs and groups
+- [x] Screen sharing: watch and share (Go Live)
 - [x] Rich Presence: show the game you're playing, off by default
 - [x] "Playing …" for games without Rich Presence, found by their running program, off by default
 - [x] Moderation: kick, ban, timeout, and server mute and deafen

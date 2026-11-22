@@ -81,6 +81,16 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
   com Atender e Recusar, um toque (mudo no Não perturbe ou numa conversa silenciada), a notificação do
   sistema e a barra de tarefas piscando, mesmo da bandeja. Botão direito no microfone ou no fone troca o
   dispositivo no meio da call; `Ctrl+Shift+M` muta e `Ctrl+Shift+D` ensurdece.
+- **Transmissão de tela (Go Live)**, nos dois sentidos. **Assistir**: quem transmite tem o selo AO VIVO
+  na lista de canais e o botão Assistir no quadro; a transmissão ocupa a tela da call, com os quadros de
+  todo mundo numa faixa embaixo, e "Só a transmissão" (ou um clique duplo) esconde os quadros.
+  **Transmitir**: o botão de tela na barra da call pergunta o que e em que qualidade (720p 30, 1080p 30,
+  720p 60, 480p 15); o seu quadro mostra a sua tela e quantos estão assistindo. No Wayland, o próprio
+  diálogo do sistema escolhe uma tela ou uma janela (xdg-desktop-portal e PipeWire); no X11 e no Windows,
+  você escolhe uma tela inteira no app. Precisa do FFmpeg: um codificador de H.264 para transmitir
+  (libx264, ou NVENC, AMF, Quick Sync, Media Foundation, OpenH264) e o decodificador para assistir,
+  H.264 ou VP8. O vídeo vai cifrado de ponta a ponta com o DAVE, como a voz. O som da transmissão dos
+  outros toca; transmitindo, por enquanto vai só a imagem.
 - **Interações do Discord**: menu do botão direito em mensagens, usuários, canais e servidores;
   barra de ações ao passar o mouse; **responder** (com a "curvinha" e clique para pular até a
   original); **editar** (`↑` na caixa vazia edita a última); **excluir**; **reações**;
@@ -281,7 +291,8 @@ Remove-Item Env:LARPER_TOKEN
 A variável só vale quando o app abre: se o larperCord já estiver aberto, mesmo só na bandeja,
 encerre antes (**Sair** no menu do ícone da bandeja).
 
-`--demo` força o modo demonstração mesmo com token. Ainda não tem: compartilhar tela e câmera. Canais
+`--demo` força o modo demonstração mesmo com token. Ainda não tem: câmera, e o som quando você
+transmite a tela. Canais
 sem acesso só mostram um aviso. As notificações passam pelo `notify-send` no Linux (do libnotify) e
 pela bandeja no Windows, e clicar numa delas ainda não abre o canal. A voz usa o backend de áudio do
 sistema via SDL3 e só sobe a thread quando você entra numa call.
@@ -315,7 +326,9 @@ No Linux, precisa de **Zig 0.17**, **SDL3**, **FreeType**, **fontconfig** e **li
 Fontes recomendadas no Linux: Inter, JetBrains Mono e Noto Color Emoji (o fontconfig escolhe substitutas se faltar
 alguma). No Windows o app usa Segoe UI, Consolas e Segoe UI Emoji.
 Opcional: **FFmpeg 7, 8 ou 9** (libavformat 61–63) para tocar vídeo dentro do app; outra versão
-é ignorada e o vídeo abre no navegador.
+é ignorada e o vídeo abre no navegador. A transmissão de tela usa o mesmo FFmpeg, com um codificador
+de H.264 (o libx264 da maioria das distribuições), a libavdevice no X11, e o xdg-desktop-portal com o
+PipeWire no Wayland.
 
 ```bash
 # Arch
@@ -396,6 +409,7 @@ gateway falso pelo real não toca na interface.
 - [ ] Notificações nativas via D-Bus no Linux
 - [x] Voz (DAVE/MLS + Opus)
 - [x] Calls em DM e grupo
+- [x] Transmissão de tela: assistir e transmitir (Go Live)
 - [x] Rich Presence: mostrar o jogo que você está jogando, desligado por padrão
 - [x] "Jogando …" para jogos sem Rich Presence, achados pelo programa aberto, desligado por padrão
 - [x] Moderação: expulsar, banir, castigo, e silenciar e ensurdecer no servidor
