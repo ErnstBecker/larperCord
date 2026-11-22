@@ -72,6 +72,18 @@ pub const Api = struct {
     av_packet_free: *const fn (*?*Packet) callconv(.c) void,
     av_packet_unref: *const fn (*Packet) callconv(.c) void,
     av_packet_move_ref: *const fn (*Packet, *Packet) callconv(.c) void,
+    // Transmissão de tela (platform/video_codec.zig): codificar e decodificar sem contêiner.
+    avcodec_find_encoder_by_name: *const fn ([*:0]const u8) callconv(.c) ?*const Codec,
+    avcodec_find_decoder_by_name: *const fn ([*:0]const u8) callconv(.c) ?*const Codec,
+    avcodec_send_frame: *const fn (*CodecCtx, ?*const Frame) callconv(.c) c_int,
+    avcodec_receive_packet: *const fn (*CodecCtx, *Packet) callconv(.c) c_int,
+    av_new_packet: *const fn (*Packet, c_int) callconv(.c) c_int,
+    av_frame_get_buffer: *const fn (*Frame, c_int) callconv(.c) c_int,
+    av_frame_make_writable: *const fn (*Frame) callconv(.c) c_int,
+    av_frame_unref: *const fn (*Frame) callconv(.c) void,
+    av_find_input_format: *const fn ([*:0]const u8) callconv(.c) ?*const anyopaque,
+    av_dict_set: *const fn (*?*anyopaque, [*:0]const u8, [*:0]const u8, c_int) callconv(.c) c_int,
+    av_dict_free: *const fn (*?*anyopaque) callconv(.c) void,
 
     avformat_version: *const fn () callconv(.c) c_uint,
     avformat_alloc_context: *const fn () callconv(.c) ?*FormatCtx,
@@ -271,6 +283,11 @@ pub fn loadedSource() Source {
 /// A pasta de onde ele veio (vazia: pelo nome, na busca do sistema).
 pub fn loadedDir() []const u8 {
     return source_dir.slice();
+}
+
+/// O libavformat carregado (61, 62, 63): a libavdevice tem o mesmo número.
+pub fn loadedLavf() u32 {
+    return loaded.lavf;
 }
 
 /// A versão do FFmpeg carregado (7, 8, 9).
@@ -497,11 +514,34 @@ pub fn frameHeight(f: *Frame) c_int {
 fn frameSamples(f: *Frame) c_int {
     return field(c_int, f, 112).*;
 }
-fn frameFormat(f: *Frame) c_int {
+pub fn frameFormat(f: *Frame) c_int {
     return field(c_int, f, 116).*;
 }
 fn framePts(f: *Frame) i64 {
     return field(i64, f, 136).*;
+}
+/// Para codificar: o tamanho, o formato e o tempo de um quadro novo.
+pub fn setFrame(f: *Frame, w: c_int, h: c_int, format: c_int) void {
+    field(c_int, f, 104).* = w;
+    field(c_int, f, 108).* = h;
+    field(c_int, f, 116).* = format;
+}
+pub fn setFramePts(f: *Frame, pts: i64) void {
+    field(i64, f, 136).* = pts;
+}
+/// AVPacket: os bytes, o tamanho e as flags (1 = quadro-chave); igual nas três versões.
+pub fn packetData(p: *Packet) []u8 {
+    const ptr = field(?[*]u8, p, 24).* orelse return &.{};
+    const n = field(c_int, p, 32).*;
+    return ptr[0..@intCast(@max(n, 0))];
+}
+pub fn packetKey(p: *Packet) bool {
+    return field(c_int, p, 40).* & 1 != 0;
+}
+/// A struct AVFormatContext aberta por formato de entrada (captura de tela).
+pub fn formatStream0Codecpar(fmt: *FormatCtx) ?*const anyopaque {
+    const s = streamAt(fmt, 0) orelse return null;
+    return streamCodecpar(s);
 }
 fn packetStream(p: *Packet) c_int {
     return field(c_int, p, 36).*;
