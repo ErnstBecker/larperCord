@@ -32,6 +32,10 @@ test {
     _ = @import("core/leitura.zig");
     _ = @import("core/links.zig");
     _ = @import("core/voz.zig");
+    _ = @import("core/golive.zig");
+    _ = @import("net/golive_json.zig");
+    _ = @import("platform/tela.zig");
+    _ = @import("platform/tela_portal.zig");
     _ = @import("core/sons.zig");
     _ = @import("core/aviso.zig");
     _ = @import("core/som_arquivo.zig");

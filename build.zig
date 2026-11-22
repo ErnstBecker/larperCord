@@ -362,7 +362,7 @@ pub fn build(b: *std.Build) void {
             for ([_][]const u8{ "SDL3.dll", "curl.dll", "crypto.dll" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no });
         }
         for ([_][]const u8{ "opus", "z", "webp", "webpdemux", "sharpyuv" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no, .preferred_link_mode = .static });
-        for ([_][]const u8{ "ws2_32", "advapi32", "crypt32", "shell32", "ole32", "bcrypt", "user32" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no });
+        for ([_][]const u8{ "ws2_32", "advapi32", "crypt32", "shell32", "ole32", "bcrypt", "user32", "gdi32" }) |l| mod.linkSystemLibrary(l, .{ .use_pkg_config = .no });
         if (!single_exe) for ([_][]const u8{ "SDL3.dll", "libcurl-x64.dll", "libcrypto-3-x64.dll" }) |dll| b.getInstallStep().dependOn(&b.addInstallBinFile(win_deps.path(b, b.pathJoin(&.{ "bin", dll })), dll).step);
     } else {
         mod.linkSystemLibrary("sdl3", .{});
