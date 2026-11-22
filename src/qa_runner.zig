@@ -3313,6 +3313,7 @@ const ops_cronometro = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @i
 const ops_perfil = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_perfil.zig").ops;
 const ops_perfil_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_perfil.zig").ops_theme;
 const ops_call = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops;
+const ops_golive = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_golive.zig").ops;
 const ops_call_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_call.zig").ops_theme;
 const ops_membros = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_membros.zig").ops;
 const ops_cache_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_cache.zig").ops_a;
@@ -3394,6 +3395,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "perfil-tema", &ops_perfil_tema },
     .{ "call", &ops_call },
     .{ "call-tema", &ops_call_tema },
+    .{ "golive", &ops_golive },
     .{ "membros", &ops_membros },
     .{ "cache-a", &ops_cache_a },
     .{ "cache-b", &ops_cache_b },

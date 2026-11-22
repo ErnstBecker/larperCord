@@ -464,6 +464,9 @@ pub const ops = [_]Op{
     key(c.ImGuiKey_Escape),
     expect("Esc depois de trocar de call ainda volta para o segundo servidor", backToGuild1Again),
     click("voice-view"),
+    // Nos primeiros 250 ms depois de a caixa de mensagem sair da tela, o pet ainda está
+    // no lugar dela, por cima do vermelho (ui/mascote_pet.zig, `hidden`).
+    .{ .wait = 300 },
     click("grid-leave"),
     expect("sair pelo vermelho da tela sai da call e volta para o segundo servidor, de onde ela abriu", leftCall),
 

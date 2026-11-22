@@ -66,6 +66,8 @@ QA_SUITE=cronometro run "tempo da call" $bin --qa --theme classico
 QA_SUITE=perfil run "perfil do servidor" $bin --qa --theme classico
 # Tela da call: a grade com cada um, os botões, ir e voltar, muita gente e a DM.
 QA_SUITE=call run "tela da call" $bin --qa --theme classico
+# Transmissão de tela: assistir (a tela sintética em H.264 e RTP) e transmitir.
+QA_SUITE=golive run "transmissão de tela" $bin --qa --theme classico
 QA_SUITE=flutuante run "janela flutuante" $bin --qa --theme classico
 # Op 8: os membros dos autores das páginas (DM nunca, no máximo um por servidor a cada
 # 30 s, as páginas se juntando, sem repetir), e o apelido e a cor do cargo numa
