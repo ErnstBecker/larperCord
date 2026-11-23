@@ -3351,6 +3351,15 @@ const ops_lembretes_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @
 const ops_pastas = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_pastas.zig").ops;
 const ops_pastas_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_pastas.zig").ops_tema;
 const ops_pastas_plana = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_pastas.zig").ops_plana;
+/// A rede de verdade contra o Discord de mentira (qa_rede.zig, tools/qa_rede.sh): só no
+/// executável de debug do QA, o único onde o endereço do Discord pode mudar.
+const ops_rede = if (@import("net/enderecos.zig").pode_trocar) @import("qa_rede.zig").ops else [_]Op{
+    s("rede"),
+    expect("o Discord de mentira só existe no executável de debug do QA", soNoDebug),
+};
+fn soNoDebug(_: *App) bool {
+    return false;
+}
 
 /// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
@@ -3430,6 +3439,7 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "pastas", &ops_pastas },
     .{ "pastas-tema", &ops_pastas_tema },
     .{ "pastas-plana", &ops_pastas_plana },
+    .{ "rede", &ops_rede },
 };
 
 /// O nome de cada bateria (tools/qa.sh e quem quiser listar: --qa-list).

@@ -41,6 +41,10 @@
 - A barra muda na hora e a conta grava cada mudança; várias seguidas em menos de um segundo vão juntas. Cada gravação é um pedido só, feito a partir da cópia das configurações da conta que o app já recebe do Discord (ao conectar, quando outro aparelho muda algo e na resposta de cada gravação); só sem essa cópia ele as lê antes. Se outro aparelho gravou algo no meio, o Discord recusa e responde com as configurações como estão, e a mudança é feita de novo por cima delas. Só as pastas vão para o Discord: todo o resto das configurações da conta, inclusive o que o app não conhece, fica exatamente como estava, e a pasta que não mudou volta byte a byte. Se as configurações vêm num formato que o app não consegue ler inteiro, nada é gravado. Se a gravação falha, a barra volta ao que a conta tem e um aviso diz por quê. Uma mudança feita em outro aparelho reorganiza a barra aqui assim que chega.
 - As pastas agora aparecem em toda barra de servidores que tem espaço para elas: a em pé, a deitada e a lista (papel, escritorio, cupertino). No dock e nas abas do terminal os servidores continuam um a um, então arrastar lá só reordena (solto no meio dos servidores de uma pasta, o servidor entra nela), e os menus valem em todo lugar. O QA tem baterias novas que arrastam, renomeiam, mudam a cor, levam servidores para dentro e para fora, reordenam, desfazem uma pasta, fazem uma gravação falhar e recebem uma mudança de outro aparelho, decodificando cada pedido de volta e contando os pedidos de cada gravação. O japonês segue os textos novos; os novos em russo estão em inglês por enquanto.
 
+**Conexão**
+- Entrar e cada reconexão não esperam mais até um segundo antes de mandar o IDENTIFY ou o RESUME. Quando a primeira mensagem do Discord chegava junto com a resposta da conexão, o app só a via um segundo depois.
+- Um token que o Discord recusa (4004) depois de a conexão cair algumas vezes seguidas agora mostra o motivo na tela de entrada, e não "a conexão está caindo; vou tentar com mais calma", que nem era verdade: depois disso nada tenta de novo.
+
 ## 0.6.7
 
 **Janela flutuante**

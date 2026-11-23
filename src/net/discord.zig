@@ -74,10 +74,8 @@ const Value = std.json.Value;
 const alloc = std.heap.c_allocator;
 const links = @import("../core/links.zig");
 const entrada = @import("../core/entrada.zig");
-const api = "https://discord.com/api/v10";
-/// A busca vai na versão que o cliente do Discord usa (o caminho já traz o /v9).
-const api_root = "https://discord.com/api";
-const gateway_host = "wss://gateway.discord.gg";
+/// A API e o gateway (fixos; no executável do QA, o Discord de mentira local).
+const enderecos = @import("enderecos.zig");
 /// Query do gateway: JSON + compressão zlib-stream (a mesma do cliente oficial).
 const gateway_query = "v=10&encoding=json&compress=zlib-stream";
 /// Identifica-se como o cliente web do Discord (as três constantes saem do
@@ -324,7 +322,9 @@ pub const Gateway = struct {
             const lived: ?i64 = if (g.ws_ready) nowMs() - g.ws_ready_ms else null;
             g.ws_ready = false;
             retry.sessionEnded(lived);
-            if (retry.justStartedFlapping() and lived != null) g.notice("a conexão está caindo logo depois de conectar; vou tentar com mais calma", "the connection keeps dropping right after connecting; retrying more slowly", .{});
+            // Recusa de vez (4004, 4010-4014): não há tentativa nenhuma depois, e o aviso de
+            // "vou tentar com mais calma" tomaria o lugar do motivo na tela de entrada.
+            if (retry.justStartedFlapping() and lived != null and result != .fatal) g.notice("a conexão está caindo logo depois de conectar; vou tentar com mais calma", "the connection keeps dropping right after connecting; retrying more slowly", .{});
             switch (result) {
                 .fatal => {
                     g.emit(.{ .status = .failed });
@@ -349,7 +349,7 @@ pub const Gateway = struct {
                 .retry => {
                     g.emit(.{ .status = .reconnecting });
                     const proxy_gen = proxy.generation();
-                    g.sleepServing(retry.next(random));
+                    g.sleepServing(enderecos.espera(retry.next(random)));
                     // Proxy novo: as esperas começam de novo do mínimo.
                     if (proxy.generation() != proxy_gen) retry = .{};
                 },
@@ -357,14 +357,14 @@ pub const Gateway = struct {
                     g.emit(.{ .status = .reconnecting });
                     // O Discord pediu depois de uma sessão estável: volta logo. Caindo sem parar:
                     // nada de um IDENTIFY por segundo.
-                    g.sleepServing(if (retry.fresh) 1000 + random.uintLessThan(u32, 500) else retry.next(random));
+                    g.sleepServing(enderecos.espera(if (retry.fresh) 1000 + random.uintLessThan(u32, 500) else retry.next(random)));
                 },
                 .new_session => {
                     // Sessão inválida/expirada: o Discord manda esperar de
                     // 1 a 5 segundos antes de abrir uma nova.
                     g.clearSession();
                     g.emit(.{ .status = .reconnecting });
-                    g.sleepServing(1000 + random.uintLessThan(u32, 4000) + (if (retry.fresh) 0 else retry.next(random)));
+                    g.sleepServing(enderecos.espera(1000 + random.uintLessThan(u32, 4000) + (if (retry.fresh) 0 else retry.next(random))));
                 },
             }
         }
@@ -531,7 +531,7 @@ pub const Gateway = struct {
         sys.curlTlsWebSocket(h);
         g.ws = h;
         var url_buf: [512]u8 = undefined;
-        const base = if (g.resume_len > 0) g.resume_base[0..@as(usize, g.resume_len)] else gateway_host;
+        const base = if (g.resume_len > 0) g.resume_base[0..@as(usize, g.resume_len)] else enderecos.gateway();
         const url = gatewayUrl(&url_buf, base) orelse return .retry;
         _ = c.curl_easy_setopt(h, c.CURLOPT_URL, url.ptr);
         _ = c.curl_easy_setopt(h, c.CURLOPT_CONNECT_ONLY, @as(c_long, 2));
@@ -543,8 +543,8 @@ pub const Gateway = struct {
             hs_headers = c.curl_slist_append(hs_headers, "Origin: https://discord.com");
             defer if (hs_headers) |list| c.curl_slist_free_all(list);
             if (hs_headers) |list| _ = c.curl_easy_setopt(h, c.CURLOPT_HTTPHEADER, list);
-            _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, "https,wss");
-            _ = c.curl_easy_setopt(h, c.CURLOPT_REDIR_PROTOCOLS_STR, "https,wss");
+            _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, enderecos.protocolosWs());
+            _ = c.curl_easy_setopt(h, c.CURLOPT_REDIR_PROTOCOLS_STR, enderecos.protocolosWs());
             const via_proxy = useProxy(h);
             g.abortable(h);
             const rc = c.curl_easy_perform(h);
@@ -572,6 +572,11 @@ pub const Gateway = struct {
         g.frame.clearRetainingCapacity();
         g.zout.clearRetainingCapacity();
         g.shrinkBuffers();
+        // O HELLO pode vir junto com a resposta do aperto de mão: aí o curl já o leu para
+        // dentro dele, o socket não tem mais nada e o poll lá embaixo só acordaria no teto
+        // de 1 s (o IDENTIFY ou o RESUME saíam 1 s atrasados a cada conexão).
+        g.serviceWs();
+        if (g.ws_end) |e| return e;
 
         var cmds: std.ArrayList(ev.Command) = .empty;
         defer cmds.deinit(alloc);
@@ -2950,12 +2955,12 @@ pub const Gateway = struct {
             @memcpy(g.session_id[0..n], sid[0..n]);
             g.session_len = n;
         }
-        if (j.str(j.get(d, "resume_gateway_url"))) |base| {
+        if (j.str(j.get(d, "resume_gateway_url"))) |base| if (enderecos.retomadaAceita(base)) {
             const n: u8 = @intCast(@min(base.len, g.resume_base.len));
             g.resume_base = @splat(0);
             @memcpy(g.resume_base[0..n], base[0..n]);
             g.resume_len = n;
-        }
+        };
 
         var users: std.ArrayList(types.User) = .empty;
         var seen: std.AutoHashMapUnmanaged(Id, void) = .empty;
@@ -3177,6 +3182,11 @@ pub const Gateway = struct {
     /// Configurações → Rede com "em tudo": gateway e API também pelo proxy (o
     /// gateway muda na próxima conexão). true = vai pelo proxy.
     fn useProxy(h: *c.CURL) bool {
+        // O Discord de mentira do QA é local: nem o proxy das configurações nem o do ambiente.
+        if (enderecos.local()) {
+            _ = c.curl_easy_setopt(h, c.CURLOPT_PROXY, "");
+            return false;
+        }
         var pb: proxy.Buf = undefined;
         const p = proxy.forDiscord(&pb) orelse return false;
         _ = c.curl_easy_setopt(h, c.CURLOPT_PROXY, p.ptr);
@@ -3337,7 +3347,7 @@ pub const Gateway = struct {
             return null;
         }
         var url_buf: [1400]u8 = undefined;
-        const url = std.fmt.bufPrintSentinel(&url_buf, "{s}{s}", .{ if (std.mem.startsWith(u8, path, "/v9/")) api_root else api, path }, 0) catch return null;
+        const url = std.fmt.bufPrintSentinel(&url_buf, "{s}{s}", .{ if (std.mem.startsWith(u8, path, "/v9/")) enderecos.apiRaiz() else enderecos.api(), path }, 0) catch return null;
         var auth_buf: [256]u8 = undefined;
         defer std.crypto.secureZero(u8, &auth_buf);
         const auth = std.fmt.bufPrintSentinel(&auth_buf, "Authorization: {s}", .{g.token}, 0) catch return null;
@@ -3426,9 +3436,10 @@ pub const Gateway = struct {
             c.curl_easy_reset(h);
             sys.curlTls(h);
             // A URL é fixa (discord.com/api), mas restringir o protocolo
-            // impede que um redirect ou proxy mal configurado vire http.
-            _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, "https");
-            _ = c.curl_easy_setopt(h, c.CURLOPT_REDIR_PROTOCOLS_STR, "https");
+            // impede que um redirect ou proxy mal configurado vire http (só o
+            // Discord de mentira do QA, em 127.0.0.1, fala http).
+            _ = c.curl_easy_setopt(h, c.CURLOPT_PROTOCOLS_STR, enderecos.protocolosRest());
+            _ = c.curl_easy_setopt(h, c.CURLOPT_REDIR_PROTOCOLS_STR, enderecos.protocolosRest());
             _ = c.curl_easy_setopt(h, c.CURLOPT_URL, url.ptr);
             _ = c.curl_easy_setopt(h, c.CURLOPT_HTTPHEADER, headers);
             _ = c.curl_easy_setopt(h, c.CURLOPT_USERAGENT, web_user_agent.ptr);

@@ -41,6 +41,10 @@
 - The bar changes right away and the account saves each change; several in a row within a second go out together. Each save is a single request, made from the copy of the account settings the app already gets from Discord (when it connects, when another device changes something and in the answer to each save); only without that copy does it read them first. If another device saved something in between, Discord refuses and answers with the settings as they are, and the change is made again on top of them. Only the folders go to Discord: every other account setting, including ones the app doesn't know, stays exactly as it was, and a folder that didn't change goes back byte for byte. If the settings come in a shape the app can't read in full, nothing is written. If saving fails, the bar goes back to what the account has and a notice says why. A change made on another device rearranges the bar here as it arrives.
 - The folders now show in every server bar that has room for them: the vertical one, the horizontal one and the list (papel, escritorio, cupertino). In the dock and the terminal tabs the servers stay one by one, so dragging there only reorders them (dropped in the middle of a folder's servers, a server goes into that folder), and the menus work everywhere. The QA has new suites that drag, rename, recolor, move servers in and out, reorder, remove a folder, fail a save and get a change from another device, decoding each request back and counting the requests of each save. Japanese follows the new texts; the new Russian ones are in English for now.
 
+**Connection**
+- Signing in and every reconnect no longer wait up to a second before sending IDENTIFY or RESUME. When Discord's first message came in together with the answer to the connection, the app only noticed it a second later.
+- A token Discord refuses (4004) after the connection had dropped a few times in a row now shows why on the sign-in screen, instead of "the connection keeps dropping; retrying more slowly", which also wasn't true: nothing retries after that.
+
 ## 0.6.7
 
 **Floating window**
