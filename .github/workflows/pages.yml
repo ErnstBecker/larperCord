@@ -77,7 +77,7 @@ jobs:
               if [ -d "$p" ]; then cp -r "$p" "$inc/"; break; fi
             done
           done
-          for h in curl/curl.h opus/opus.h webp/decode.h webp/demux.h fontconfig/fontconfig.h; do
+          for h in curl/curl.h opus/opus.h webp/decode.h webp/demux.h webp/encode.h webp/mux.h fontconfig/fontconfig.h; do
             test -f "$inc/$h"
           done
           echo "WEB_INCLUDE=$inc" >> "$GITHUB_ENV"

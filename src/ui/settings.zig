@@ -1065,10 +1065,11 @@ fn page(p: *Page, previews: []const Preview) void {
             {
                 const msg_cache = @import("../net/msg_cache.zig");
                 const busca = @import("../net/busca_local.zig").stats();
+                const gif_clips = @import("gif_clips.zig");
                 var sb: [24]u8 = undefined;
                 var lb: [64]u8 = undefined;
-                // O índice da busca vai junto com o cache.
-                const size = msg_cache.formatSize(&sb, msg_cache.totalBytes() + busca.disk, i18n.en());
+                // O índice da busca e os clipes dos GIFs favoritos vão junto com o cache.
+                const size = msg_cache.formatSize(&sb, msg_cache.totalBytes() + busca.disk + gif_clips.totalBytes(), i18n.en());
                 if (p.button(i18n.fmt(&lb, "Apagar cache ({s})", "Clear cache ({s})", .{size}), true)) ctx.act(.clear_cache);
                 p.y += 8;
                 var db: [24]u8 = undefined;
@@ -1077,6 +1078,12 @@ fn page(p: *Page, previews: []const Preview) void {
                 const y0 = p.y;
                 p.note(i18n.fmt(&nb, "Busca neste computador: {d} mensagens, {s} no disco, {s} na memória.", "Search on this computer: {d} messages, {s} on disk, {s} in memory.", .{ busca.docs, msg_cache.formatSize(&db, busca.disk, i18n.en()), msg_cache.formatSize(&mb, busca.mem, i18n.en()) }));
                 qa.mark(.{ .x = p.x, .y = y0, .w = p.w, .h = p.y - y0 }, "search-index-stats", .{});
+                const gs = gif_clips.stats();
+                var gb: [24]u8 = undefined;
+                var gn: [200]u8 = undefined;
+                const y1 = p.y;
+                p.note(i18n.fmt(&gn, "GIFs favoritos guardados para abrir na hora: {d}, {s} no disco.", "Favorite GIFs kept to open instantly: {d}, {s} on disk.", .{ gs.clips, msg_cache.formatSize(&gb, gs.bytes, i18n.en()) }));
+                qa.mark(.{ .x = p.x, .y = y1, .w = p.w, .h = p.y - y1 }, "gif-clips-stats", .{});
             }
             p.note(i18n.tr("Fora isso, imagens e avatares só vêm dos servidores do Discord.", "Everything else (images, avatars) only comes from Discord's servers."));
             p.divider();

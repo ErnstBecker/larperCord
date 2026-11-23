@@ -3440,6 +3440,8 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "pastas-tema", &ops_pastas_tema },
     .{ "pastas-plana", &ops_pastas_plana },
     .{ "rede", &ops_rede },
+    .{ "gif-clipes-a", &@import("qa_gif_clipes.zig").ops_a },
+    .{ "gif-clipes-b", &@import("qa_gif_clipes.zig").ops_b },
 };
 
 /// O nome de cada bateria (tools/qa.sh e quem quiser listar: --qa-list).

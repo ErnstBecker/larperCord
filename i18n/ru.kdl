@@ -807,6 +807,7 @@
 "Failed. Try again" "Ошибка. Повторить"
 "Fair connection to the voice server" "Удовлетворительное соединение с голосовым сервером"
 "False" "Нет"
+"Favorite GIFs kept to open instantly: {d}, {s} on disk." "Favorite GIFs kept to open instantly: {d}, {s} on disk."
 "Favorites" "Избранное"
 "Feedback" "Обратная связь"
 "FFmpeg installed. Videos now play in the app." "FFmpeg установлен. Видео теперь воспроизводятся в приложении."

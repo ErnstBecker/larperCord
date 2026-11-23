@@ -499,6 +499,12 @@ fn gifPreviewsOn(app: *App) bool {
 fn gifPreviewsReset(app: *App) void {
     app.st.settings.gif_hosts = false;
 }
+fn clipsOff(_: *App) void {
+    @import("ui/gif_clips.zig").off = true;
+}
+fn clipsOn(_: *App) void {
+    @import("ui/gif_clips.zig").off = false;
+}
 
 // --- GIFs favoritos ----------------------------------------------------------------
 
@@ -703,6 +709,8 @@ pub const ops_extras = [_]Op{
     .{ .expect = .{ .name = "e só baixa depois de confirmar", .check = ffmpegDone, .timeout_ms = 2000 } },
     key(c.ImGuiKey_Escape),
     s("seletor de GIFs"),
+    // O caminho da rede (os clipes dos favoritos têm a bateria deles, gif-clipes-a e -b).
+    .{ .run = clipsOff },
     click("composer"),
     .{ .text = "ainda escrevendo" },
     click("composer-gif"),
@@ -749,6 +757,7 @@ pub const ops_extras = [_]Op{
     .{ .shot = "gif-estrela-conversa" },
     .{ .click = .{ .dyn = tDemoGifStar } },
     .{ .expect = .{ .name = "e de novo tira", .check = msgGifUnstarred, .timeout_ms = 3000 } },
+    .{ .run = clipsOn },
     s("GIF longo toca aos poucos, com todos os quadros"),
     .{ .expect = .{ .name = "passou do limite: toca decodificando aos poucos em vez de juntar quadros", .check = longGifStreams, .timeout_ms = 10000 } },
     .{ .expect = .{ .name = "uma volta inteira mostra os 96 quadros, em ordem, 30 ms cada", .check = longGifFullLoop, .timeout_ms = 25000 } },

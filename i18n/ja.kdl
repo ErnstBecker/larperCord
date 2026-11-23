@@ -799,6 +799,7 @@
 "Failed. Try again" "失敗しました。再試行"
 "Fair connection to the voice server" "音声サーバーへの接続はまずまずです"
 "False" "いいえ"
+"Favorite GIFs kept to open instantly: {d}, {s} on disk." "すぐ開けるように保存したお気に入りGIF: {d}件、ディスク上{s}。"
 "Favorites" "お気に入り"
 "Feedback" "フィードバック"
 "FFmpeg installed. Videos now play in the app." "FFmpegをインストールしました。動画がアプリ内で再生できるようになりました。"

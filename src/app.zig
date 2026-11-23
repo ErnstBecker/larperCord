@@ -56,6 +56,7 @@ const app_lembretes = @import("app_lembretes.zig");
 const app_pastas = @import("app_pastas.zig");
 const msg_cache = @import("net/msg_cache.zig");
 const busca_local = @import("net/busca_local.zig");
+const gif_clips = @import("ui/gif_clips.zig");
 const state_cache = @import("net/state_cache.zig");
 const state_snapshot = @import("core/state_snapshot.zig");
 const insp_cap = @import("inspect/captura.zig");
@@ -357,6 +358,7 @@ pub const App = struct {
         // Cache de mensagens e contas: o QA e os prints nunca usam os de verdade.
         msg_cache.init(opts.qa);
         msg_cache.off = opts.shot != null;
+        gif_clips.off = opts.shot != null;
         // O modo QA já desde aqui: a abertura pelo retrato lê arquivos (os conjuntos de
         // abas) antes do laço, e no QA eles ficam em qa-out/, nunca nos de verdade.
         if (opts.qa) qa_mod.enable();
@@ -413,6 +415,8 @@ pub const App = struct {
         // Antes da rede: a thread do gateway inicia o libcurl pelo mesmo caminho.
         app.images = try images.Cache.init(app.win.renderer, app.win.wake_type);
         @import("ui/exportar.zig").init(app.win.wake_type);
+        // Os clipes dos GIFs favoritos (o QA em qa-out/, nunca no cache de verdade).
+        gif_clips.init(app.win.wake_type, opts.qa);
 
         // Com token salvo: conecta direto (a tela de abertura aparece enquanto
         // isso). Sem token: a tela de login. Prints e QA usam a demonstração.
@@ -713,6 +717,9 @@ pub const App = struct {
         temporarios.limparTudo();
         // Exportação ou "Salvar" andando: cancela e espera (só fica o .part, que elas apagam).
         @import("ui/exportar.zig").shutdown();
+        // O clipe de GIF sendo feito para e a lista dele é gravada (antes das imagens: a
+        // thread dele usa o libcurl).
+        gif_clips.deinit();
         // (Por último, lá dentro: as threads de mídia e de vídeo usam o libcurl.)
         app.images.deinit();
         app.st.saved.deinit(app.gpa);
@@ -1920,6 +1927,8 @@ pub const App = struct {
                 // A lista muda na hora; a resposta (com este `req`) confirma.
                 const list = &app.store.gif_favorites;
                 list.toggleLocal(f.url, f.shown, f.add);
+                // O clipe sai do que a tela acabou de mostrar (numa thread, sem rede).
+                gif_clips.starred(f.url, f.shown, f.add);
                 const ca = std.heap.c_allocator;
                 const url = ca.dupe(u8, f.url) catch return;
                 const src = ca.dupe(u8, f.src) catch return ca.free(url);
@@ -2514,6 +2523,7 @@ pub const App = struct {
             .clear_cache => {
                 msg_cache.clearAll(&app.store);
                 busca_local.clear(&app.store);
+                gif_clips.clearAll(&app.images);
                 st.showToast(now(), false, "cache apagado", "cache cleared", .{});
             },
         }
@@ -2706,6 +2716,9 @@ pub const App = struct {
             else => {},
         }
         switch (e) {
+            // A lista dos favoritos que o Store aceitou (a resposta mais nova): os clipes
+            // seguem (o que saiu sai, o que falta entra na fila).
+            .gifs => |g| if (g.favorites and g.ok and g.req == app.store.gif_favorites.req) gif_clips.sync(app.store.gif_favorites.items, &app.images),
             .search_results => |r| @import("ui/search.zig").deliver(r),
             .invite_created => |r| @import("ui/invites.zig").created(r),
             .moderated => |r| @import("ui/moderacao.zig").delivered(st, &app.store, r, now()),
@@ -3005,6 +3018,7 @@ pub const App = struct {
         // disco" desligado não lê nada.
         msg_cache.enabled = app.st.settings.message_cache;
         msg_cache.setAccount(acct);
+        gif_clips.setAccount(acct);
         var arena = std.heap.ArenaAllocator.init(app.gpa);
         defer arena.deinit();
         const snap = state_cache.load(arena.allocator()) orelse return false;
@@ -3520,6 +3534,7 @@ pub const App = struct {
                 bg_dirty = true;
                 app_flutuante.marcar(app);
             }
+            if (gif_clips.pump(&app.images, &app.store)) bg_dirty = true;
             if (app.images.takeCopied()) |ok| {
                 if (ok) app.st.showToast(now(), false, "imagem copiada", "image copied", .{}) else app.st.showToast(now(), true, "não deu para copiar a imagem", "couldn't copy the image", .{});
             }
@@ -4023,6 +4038,7 @@ pub const App = struct {
         app.loginAfterReady();
         app.images.now_ms = now_ms;
         if (app.images.pump()) wl.bg_dirty = true;
+        if (gif_clips.pump(&app.images, &app.store)) wl.bg_dirty = true;
         const due = @min(@min(@min(app.images.next_frame_ms, anim.next_wake_ms), @min(app.sub_wait.due(), app_pastas.due())), anim.clock_wake_ms);
         if (wl.pending == 0 and !wl.bg_dirty and !wl.was_active and !app.login.visible() and now_ms < due and wl.shot == null) return true;
         wl.bg_dirty = false;

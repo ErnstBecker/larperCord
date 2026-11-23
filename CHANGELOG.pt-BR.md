@@ -45,6 +45,10 @@
 - Entrar e cada reconexão não esperam mais até um segundo antes de mandar o IDENTIFY ou o RESUME. Quando a primeira mensagem do Discord chegava junto com a resposta da conexão, o app só a via um segundo depois.
 - Um token que o Discord recusa (4004) depois de a conexão cair algumas vezes seguidas agora mostra o motivo na tela de entrada, e não "a conexão está caindo; vou tentar com mais calma", que nem era verdade: depois disso nada tenta de novo.
 
+**GIFs favoritos**
+- A aba Favoritos do seletor de GIFs abre na hora com todos os GIFs já tocando: o larperCord guarda no seu computador um clipe pequeno de cada favorito e toca dali, sem baixar nada, e mostra a lista da última vez até a do Discord chegar. A estrela num GIF faz o clipe dele com o arquivo que acabou de tocar, sem baixar de novo; os favoritos que ainda não têm clipe (guardados em outro aparelho, ou antes desta versão) ganham um em segundo plano quando o seletor abre, um por vez, pelo mesmo caminho das imagens, então o modo economia e "Animar GIFs do Tenor e do Giphy" desligado continuam querendo dizer que nada é baixado (essas células ficam como antes). Enviar continua mandando o link do GIF, igual a antes.
+- Os clipes são WebPs animados de uns 40 KB: até 160 px no lado maior com a interface em 100% (mais nas escalas maiores), 15 quadros por segundo e os primeiros 6 segundos; um GIF de até 64 KB fica como veio. Ficam em `~/.cache/larpercord/gif-favorites/<conta>` (`%LOCALAPPDATA%\larpercord\gif-favorites` no Windows), com pastas 700 e arquivos 600 no Linux, com teto de 50 MB por conta, saindo o clipe mostrado há mais tempo; um GIF tirado dos favoritos perde o clipe na próxima vez que a lista é lida. Configurações → Privacidade mostra quantos são e soma o tamanho deles no do cache, e Apagar cache, a conta removida e Apagar todos os dados levam todos. Compilar do código agora também pede a libwebpmux (vem no pacote libwebp no Arch e no Fedora, e no `libwebp-dev` no Debian e no Ubuntu); a versão portátil para Linux e a de Windows já levam dentro. O japonês segue o texto novo; em russo ele aparece em inglês por enquanto.
+
 ## 0.6.7
 
 **Janela flutuante**
