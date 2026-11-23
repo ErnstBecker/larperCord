@@ -314,7 +314,7 @@ No magic, just many small decisions:
 8. **On Linux, fontconfig gets freed** after fonts are resolved (`FcFini` + `malloc_trim`). Windows has
    no fontconfig: fonts are opened straight from `C:\Windows\Fonts`.
 9. **No blinking cursor**: a cursor blinking on its own would keep the CPU awake.
-10. **A lean binary**: a release build without debug symbols. The Linux file is about 16 MB with SDL3, libcurl and OpenSSL inside, built with only the parts the app uses and no exported symbols, and about 10 MB built against the system's copies. On Windows those three come as DLLs next to the `.exe`. The biggest texts inside it (the Japanese and Russian translations, the changelog, the emoji table) go in compressed and only open when needed.
+10. **A lean binary**: a release build without debug symbols. The Linux file is about 16 MB with SDL3, libcurl and OpenSSL inside, built with only the parts the app uses and no exported symbols, and about 10 MB built against the system's copies. On Windows they are inside the single `.exe` too (since 0.6.7). The biggest texts inside it (the Japanese and Russian translations, the changelog, the emoji table) go in compressed and only open when needed.
 
 ## Building
 

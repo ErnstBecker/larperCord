@@ -35,6 +35,7 @@
 
 **Texto em qualquer idioma**
 - O nome do mascote Terminal em Configurações → Mascote passa pela tradução, como o Clássico ao lado (#20).
+- Em inglês, a chave "Games" do mascote (o d20, dar comida, o esconde-esconde) virou "Tricks" e não tem mais o mesmo nome da página Games da Privacidade; em japonês as duas ficam 遊び e ゲーム (#20).
 
 **Pastas de servidores**
 - As pastas da barra de servidores agora dão para editar, e a mudança vai para a sua conta do Discord como no app oficial: arraste um servidor em cima de outro para fazer uma pasta com os dois, arraste servidores para dentro de uma pasta, para fora dela e entre os outros, e arraste uma pasta inteira para outro lugar. O botão direito na pasta tem Configurações da pasta (um nome, e uma cor da paleta ou qualquer código hexadecimal), Marcar pasta como lida (todos os servidores dela, num pedido só) e Remover pasta (os servidores ficam, soltos, onde ela estava); o menu do servidor tem Adicionar à pasta… (as suas pastas ou uma nova) e Remover da pasta. Uma pasta sem nome mostra os nomes dos servidores dela. Abrir e fechar uma pasta fica só neste computador.
