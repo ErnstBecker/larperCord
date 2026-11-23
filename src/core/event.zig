@@ -15,6 +15,7 @@ const moderacao = @import("moderacao.zig");
 const entrada = @import("entrada.zig");
 const interaction = @import("interaction.zig");
 const member_search = @import("../net/member_search.zig");
+const pastas = @import("pastas.zig");
 const Id = types.Id;
 
 pub const Ready = struct {
@@ -214,6 +215,10 @@ pub const Event = union(enum) {
     member_face: struct { guild: Id, user: Id, face: types.Face = .{}, keep_nick: bool = false, keep_avatar: bool = false },
     /// Ordem dos servidores e pastas (READY / mudança nas configurações).
     guild_folders: []types.GuildFolder,
+    /// Terminou a gravação das pastas até a mudança `seq` (`Command.folders`). `folders`:
+    /// como ficaram na conta (a resposta do PATCH, ou o que estava lá se não deu para
+    /// gravar); null = não deu nem para ler (a barra volta ao que o Store sabia).
+    folders_saved: struct { seq: u32, ok: bool, folders: ?[]types.GuildFolder = null },
     /// Perfil completo de alguém (o Store assume os textos).
     profile: struct { user: Id, profile: types.Profile },
     /// Amizade/pedido/bloqueio (`none` = deixou de existir).
@@ -341,6 +346,11 @@ pub const ImageChange = union(enum) {
 /// Um GIF que entra ou sai dos favoritos. `url` é a chave (o link da mensagem);
 /// `src` é o que fica guardado (o MP4 com `video`, como o app oficial guarda) e
 /// `shown`, o que a lista mostra até a resposta chegar.
+/// Pastas da barra mudadas aqui (core/pastas.zig): as operações desde a última
+/// gravação, até a de número `seq`, e os servidores do app na ordem dele (`known`;
+/// os que a conta não cita entram na lista). As listas com o c_allocator.
+pub const FolderEdit = struct { seq: u32, ops: []const pastas.Op, known: []const Id };
+
 pub const GifFavorite = struct {
     req: u32 = 0,
     add: bool,
@@ -467,6 +477,10 @@ pub const Command = union(enum) {
     /// Liga ou desliga um GIF favorito: lê as configurações da conta de novo, muda só
     /// os favoritos e grava (PATCH). Volta como `gifs` com `favorites`. Textos alocados.
     gif_favorite: GifFavorite,
+    /// Pastas da barra: o gateway lê as configurações (tipo 1) de novo, aplica as
+    /// operações e grava só o campo das pastas (PATCH), como as estrelas dos GIFs.
+    /// Volta como `folders_saved`.
+    folders: FolderEdit,
     pin: struct { channel: Id, id: Id, add: bool },
     fetch_invite: InviteCode,
     join_invite: InviteCode,
@@ -578,6 +592,8 @@ pub const Action = union(enum) {
     /// `id` 0 só abre o canal.
     open_message: struct { channel: Id, id: Id },
     mark_read: Id,
+    /// "Marcar pasta como lida": os servidores da pasta `id` (core/pastas.zig).
+    mark_folder_read: u64,
     /// A conversa está no fim e a janela em foco: lida de verdade.
     channel_seen: Id,
     /// O "×" numa nota de plugin embaixo da mensagem.
@@ -599,6 +615,9 @@ pub const Action = union(enum) {
     gif_favorites,
     /// Estrela de um GIF (na conversa ou no seletor). Textos alocados em `st.gpa`.
     gif_favorite: GifFavorite,
+    /// Mudou as pastas da barra (arrastando ou pelos menus): a tela muda na hora e a
+    /// conta grava (app_pastas.zig).
+    pasta: pastas.Op,
     want_pins: Id,
     /// "Carregar mais" no fim das fixadas.
     more_pins: Id,

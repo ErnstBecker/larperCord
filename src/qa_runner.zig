@@ -3348,6 +3348,10 @@ const ops_lembretes = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @im
 const ops_lembretes_a = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops_a;
 const ops_lembretes_b = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_lembretes.zig").ops_b;
 
+const ops_pastas = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_pastas.zig").ops;
+const ops_pastas_tema = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_pastas.zig").ops_tema;
+const ops_pastas_plana = [_]Op{expect("carrega e mostra a conversa", ready)} ++ @import("qa_pastas.zig").ops_plana;
+
 /// As baterias que dá para escolher com QA_SUITE (o nome e o roteiro). Um nome que
 /// não está aqui é erro: antes caía na geral sem avisar e o qa.sh dizia que passou.
 const suites = [_]struct { []const u8, []const Op }{
@@ -3423,6 +3427,9 @@ const suites = [_]struct { []const u8, []const Op }{
     .{ "lembretes", &ops_lembretes },
     .{ "lembretes-a", &ops_lembretes_a },
     .{ "lembretes-b", &ops_lembretes_b },
+    .{ "pastas", &ops_pastas },
+    .{ "pastas-tema", &ops_pastas_tema },
+    .{ "pastas-plana", &ops_pastas_plana },
 };
 
 /// O nome de cada bateria (tools/qa.sh e quem quiser listar: --qa-list).

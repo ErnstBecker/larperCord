@@ -35,6 +35,7 @@ const media_url = @import("media_url.zig");
 const proxy = @import("proxy.zig");
 const challenge = @import("challenge.zig");
 const settings_proto = @import("settings_proto.zig");
+const pastas_net = @import("pastas_net.zig");
 const status_proto = @import("status_proto.zig");
 const leitura = @import("../core/leitura.zig");
 const read_json = @import("read_state_json.zig");
@@ -185,6 +186,9 @@ pub const Gateway = struct {
     pending: std.ArrayList(ev.Command) = .empty,
     /// Estrelas de GIF esperando o fim da volta do laço (`flushFavorites`).
     fav_batch: std.ArrayList(ev.GifFavorite) = .empty,
+    /// A última cópia das configurações gerais (READY, USER_SETTINGS_PROTO_UPDATE,
+    /// respostas do PATCH): as pastas gravam a partir dela (net/pastas_net.zig).
+    settings1: pastas_net.Cache = .{},
     /// Comandos que vão pelo próprio gateway (op 3, 4, 14): só valem depois
     /// do READY/RESUMED (antes, o Discord fecha com 4003 e o pedido se perde).
     held: std.ArrayList(ev.Command) = .empty,
@@ -258,6 +262,11 @@ pub const Gateway = struct {
         g.conta.deinit();
         for (g.fav_batch.items) |f| freeCommand(.{ .gif_favorite = f });
         g.fav_batch.deinit(alloc);
+        g.settings1.deinit();
+    }
+
+    pub fn settingsCache(g: *Gateway) *pastas_net.Cache {
+        return &g.settings1;
     }
 
     const RoleInfo = struct { color: u32, pos: i64 };
@@ -417,6 +426,7 @@ pub const Gateway = struct {
             .gif_search => |q| g.emit(.{ .gifs = .{ .req = q.req, .ok = false } }),
             .gif_favorites => |req| g.emit(.{ .gifs = .{ .req = req, .favorites = true, .ok = false } }),
             .gif_favorite => |f| g.emit(.{ .gifs = .{ .req = f.req, .favorites = true, .ok = false } }),
+            .folders => |f| g.emit(.{ .folders_saved = .{ .seq = f.seq, .ok = false } }),
             .refresh_urls => g.emit(.{ .urls_refreshed = &.{} }),
             .fetch_sticker_packs => g.emit(.{ .sticker_packs = .{ .ok = false } }),
             .fetch_invite => |code| g.emit(.{ .invite = .{ .code = code, .invite = .{ .state = .failed } } }),
@@ -1233,20 +1243,7 @@ pub const Gateway = struct {
     /// Passa as pastas para o Store (só se vieram: uma atualização parcial
     /// sem pastas não apaga as que já temos).
     fn emitFolders(g: *Gateway, layout: settings_proto.Layout) void {
-        defer layout.deinit(alloc);
-        if (layout.folders.len == 0) return;
-        const out = alloc.alloc(types.GuildFolder, layout.folders.len) catch return;
-        var n: usize = 0;
-        for (layout.folders) |f| {
-            const guilds = alloc.dupe(Id, f.guilds) catch continue;
-            const name = alloc.dupe(u8, f.name) catch {
-                alloc.free(guilds);
-                continue;
-            };
-            out[n] = .{ .id = f.id, .name = name, .color = f.color, .guilds = guilds };
-            n += 1;
-        }
-        g.emit(.{ .guild_folders = out[0..n] });
+        g.emit(.{ .guild_folders = pastas_net.toFolders(layout, false) orelse return });
     }
 
     /// Grupo da lista de membros: "online", "offline" ou o ID de um cargo.
@@ -1589,6 +1586,7 @@ pub const Gateway = struct {
             if ((j.int(j.get(st, "type")) orelse 0) != 1) return;
             const b64 = j.str(j.get(st, "proto")) orelse return;
             const partial = if (j.get(d, "partial")) |pv| pv == .bool and pv.bool else false;
+            g.settings1.update(b64, partial);
             conta_net.onProtoUpdate(g, b64, partial);
             if (settings_proto.fromProtoBase64(alloc, b64)) |layout| g.emitFolders(layout) else |_| {}
             return;
@@ -3071,6 +3069,7 @@ pub const Gateway = struct {
         // Pastas e ordem dos servidores: protobuf das configurações (contas
         // atuais) ou o JSON antigo.
         if (j.str(j.get(d, "user_settings_proto"))) |b64| {
+            g.settings1.remember(b64);
             if (settings_proto.fromProtoBase64(alloc, b64)) |layout| g.emitFolders(layout) else |_| {}
         } else if (j.get(d, "user_settings")) |us| if (j.get(us, "guild_folders")) |gf| {
             if (settings_proto.fromJson(alloc, gf)) |layout| g.emitFolders(layout) else |_| {}
@@ -3608,6 +3607,7 @@ pub const Gateway = struct {
                 alloc.free(f.shown);
             },
             .forward_message => |f| alloc.free(f.text),
+            .folders => |f| pastas_net.free(f),
             .ack_bulk => |list| if (list.len > 0) alloc.free(list),
             .refresh_urls => |list| {
                 for (list) |u| alloc.free(u);
@@ -4237,6 +4237,7 @@ pub const Gateway = struct {
             },
             // Vai para `fav_batch` antes deste switch (`queueFavorite`).
             .gif_favorite => unreachable,
+            .folders => |f| pastas_net.save(g, f),
             .fetch_invite => |code| {
                 const failed: ev.Event = .{ .invite = .{ .code = code, .invite = .{ .state = .failed } } };
                 const path = std.fmt.bufPrint(&path_buf, "/invites/{s}?with_counts=true&with_expiration=true", .{code.slice()}) catch return;

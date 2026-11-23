@@ -52,6 +52,7 @@ const leitura = @import("core/leitura.zig");
 const saved_ui = @import("ui/saved.zig");
 const app_conjuntos = @import("app_conjuntos.zig");
 const app_lembretes = @import("app_lembretes.zig");
+const app_pastas = @import("app_pastas.zig");
 const msg_cache = @import("net/msg_cache.zig");
 const busca_local = @import("net/busca_local.zig");
 const state_cache = @import("net/state_cache.zig");
@@ -947,6 +948,7 @@ pub const App = struct {
         app.st.saved.clear(app.gpa);
         app.st.saved.owner = 0;
         app_lembretes.reset(app);
+        app_pastas.reset();
         app.plugins.setAccount(0);
         send_limits.reset();
         app.sub_wait.cancel();
@@ -1567,16 +1569,39 @@ pub const App = struct {
 
     /// "Marcar como lido" (canal ou servidor), pedido pela pessoa.
     fn markReadAction(app: *App, id: types.Id) void {
-        const st = &app.st;
         if (app.store.channel(id)) |cs| {
             cs.divider_after = 0;
             app.readChannel(id, true);
             return;
         }
+        if (app.store.guild(id) == null) return;
+        var bulk: std.ArrayList([2]types.Id) = .empty;
+        app.markGuildRead(id, &bulk);
+        app.sendBulk(&bulk);
+    }
+
+    /// "Marcar pasta como lida": todos os servidores dela num pedido só.
+    fn markFolderRead(app: *App, folder: u64) void {
+        const f = app.store.folderById(folder) orelse return;
+        var bulk: std.ArrayList([2]types.Id) = .empty;
+        for (f.guilds) |gid| if (app.store.guild(gid) != null) app.markGuildRead(gid, &bulk);
+        app.sendBulk(&bulk);
+    }
+
+    fn sendBulk(app: *App, bulk: *std.ArrayList([2]types.Id)) void {
+        const ca = std.heap.c_allocator;
+        if (bulk.items.len == 0) return bulk.deinit(ca);
+        const owned = bulk.toOwnedSlice(ca) catch return bulk.deinit(ca);
+        app.cmd(.{ .ack_bulk = owned });
+    }
+
+    /// Os canais do servidor lidos aqui; os que o Discord ainda acha não lidos vão para `bulk`.
+    fn markGuildRead(app: *App, id: types.Id, bulk: *std.ArrayList([2]types.Id)) void {
+        const st = &app.st;
         const g = app.store.guild(id) orelse return;
         const list = app.store.channelsOf(id);
         const ca = std.heap.c_allocator;
-        var bulk: std.ArrayList([2]types.Id) = .empty;
+        const before = bulk.items.len;
         for (list) |parent_ch| {
             // O canal e as threads dele.
             const threads = app.store.threadsOf(parent_ch);
@@ -1592,10 +1617,7 @@ pub const App = struct {
         }
         g.unread = false;
         g.mentions = 0;
-        if (store_mod.read_debug) std.log.info("leitura: servidor {d} marcado como lido, {d} canais no ack", .{ id, bulk.items.len });
-        if (bulk.items.len == 0) return bulk.deinit(ca);
-        const owned = bulk.toOwnedSlice(ca) catch return bulk.deinit(ca);
-        app.cmd(.{ .ack_bulk = owned });
+        if (store_mod.read_debug) std.log.info("leitura: servidor {d} marcado como lido, {d} canais no ack", .{ id, bulk.items.len - before });
     }
 
     /// "Marcar como não lida": o canal volta a estar não lido desde esta
@@ -1896,6 +1918,7 @@ pub const App = struct {
                 fav.shown = "";
                 app.cmd(.{ .gif_favorite = fav });
             },
+            .pasta => |op| app_pastas.handle(app, op),
             .search_messages => |s| app.cmd(.{ .search_messages = s }),
             .search_members => |q| app.cmd(.{ .search_members = q }),
             // Sem rede (antes do login): o pedido não vai a lugar nenhum.
@@ -2215,6 +2238,7 @@ pub const App = struct {
                 st.jump_asked = 0;
             },
             .mark_read => |id| app.markReadAction(id),
+            .mark_folder_read => |id| app.markFolderRead(id),
             .channel_seen => |id| app.readChannel(id, false),
             .deco_dismiss => |dd| app.plugins.dismissDeco(dd.run, dd.id),
             .mark_unread => |id| app.markUnreadAction(id),
@@ -3243,7 +3267,7 @@ pub const App = struct {
                 (login_anim and !app.st.settings.reduce_motion) or app_flutuante.ocupada(app);
             // Dorme até o próximo quadro de um GIF, de uma animação lenta ou
             // do redesenho adiado da rede (o que vier primeiro).
-            var due = @min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due());
+            var due = @min(@min(app.images.next_frame_ms, anim.next_wake_ms), @min(app.sub_wait.due(), app_pastas.due()));
             if (app.qa_sleep) due = @min(due, last_frame_ms + 250);
             if (bg_dirty) due = @min(due, last_frame_ms + bg_frame_ms);
             if (mouse.wanted()) due = @min(due, last_frame_ms + ritmo.MousePace.interval_ms);
@@ -3474,6 +3498,7 @@ pub const App = struct {
             }
             if (app.notifiers.items.len > 0) app.reapNotifiers();
             app.flushSubscribe();
+            app_pastas.pump(app);
             app.applyMascot();
             app.loginAfterReady();
             if (running) app.syncTray();
@@ -3981,11 +4006,12 @@ pub const App = struct {
             if (app.store.expireTyping(now_ms)) wl.pending = 2;
         }
         app.flushSubscribe();
+        app_pastas.pump(app);
         app.applyMascot();
         app.loginAfterReady();
         app.images.now_ms = now_ms;
         if (app.images.pump()) wl.bg_dirty = true;
-        const due = @min(@min(@min(app.images.next_frame_ms, anim.next_wake_ms), app.sub_wait.due()), anim.clock_wake_ms);
+        const due = @min(@min(@min(app.images.next_frame_ms, anim.next_wake_ms), @min(app.sub_wait.due(), app_pastas.due())), anim.clock_wake_ms);
         if (wl.pending == 0 and !wl.bg_dirty and !wl.was_active and !app.login.visible() and now_ms < due and wl.shot == null) return true;
         wl.bg_dirty = false;
         anim.now_ms = now_ms;

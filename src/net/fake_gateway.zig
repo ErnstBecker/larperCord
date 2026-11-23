@@ -418,6 +418,7 @@ pub const Gateway = struct {
         g.presence.deinit(alloc);
         g.conta.deinit();
         @import("fake_conta.zig").deinit();
+        @import("fake_pastas.zig").deinit();
         g.rels.deinit(alloc);
     }
 
@@ -628,7 +629,10 @@ pub const Gateway = struct {
         g.emit(.{ .my_limits = .{ .guild = guildId(quarantine_guild), .member_flags = 1 << 7 } });
         try g.demoActivities();
         try g.demoFaces();
-        g.emit(.{ .guild_folders = try demoFolders() });
+        // As configurações vão junto no READY (net/fake_pastas.zig): o app guarda a cópia.
+        const folders = try demoFolders();
+        try @import("fake_pastas.zig").ready(folders);
+        g.emit(.{ .guild_folders = folders });
         try g.demoThreads();
         try g.demoEmojis();
         try g.demoStickers();
@@ -1153,6 +1157,11 @@ pub const Gateway = struct {
                     g.emit(.{ .invite_joined = .{ .code = code, .status = status, .guild = if (status == .ok) guildId(2) else 0 } });
                 },
                 .conta => |cc| @import("fake_conta.zig").execute(g, cc),
+                .folders => |f| {
+                    const demo = try demoFolders();
+                    defer @import("../core/pastas.zig").freeFolders(alloc, demo);
+                    try @import("fake_pastas.zig").execute(g, f, demo);
+                },
                 .entrada => |e| try g.demoEntrada(e),
                 .fetch_invite => |code| {
                     _ = sent.invite_fetches.fetchAdd(1, .monotonic);

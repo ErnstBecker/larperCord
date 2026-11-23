@@ -13,6 +13,7 @@ const envio = @import("envio.zig");
 const thread_edit = @import("thread_edit.zig");
 const mencao = @import("mencao.zig");
 const dm_order = @import("dm_order.zig");
+const pastas = @import("pastas.zig");
 const Id = types.Id;
 
 /// LARPER_READ_DEBUG: conta no log por que cada canal ficou não lido (só IDs).
@@ -277,6 +278,8 @@ fn freeGifs(items: []types.Gif) void {
     if (items.len > 0) ev_alloc.free(items);
 }
 
+pub const PendingFolderOp = struct { seq: u32, op: pastas.Op };
+
 pub const Store = struct {
     gpa: std.mem.Allocator,
     me: Id = 0,
@@ -336,8 +339,15 @@ pub const Store = struct {
     /// nem procura o reloginho.
     algum_castigo: bool = false,
     relationships: std.AutoHashMapUnmanaged(Id, types.Relationship) = .empty,
-    /// Pastas e ordem dos servidores (vazio = a ordem em que vieram).
+    /// Pastas e ordem dos servidores como a barra mostra (vazio = a ordem em que
+    /// vieram): as da conta com as mudanças feitas aqui que ainda não voltaram gravadas.
     folders: []types.GuildFolder = &.{},
+    /// As pastas como a conta guarda: o último que veio do Discord (READY, outro
+    /// aparelho, a resposta de uma gravação).
+    folders_server: []types.GuildFolder = &.{},
+    /// Mudanças nas pastas feitas aqui e ainda sem resposta (app_pastas.zig), em ordem.
+    folder_ops: std.ArrayList(PendingFolderOp) = .empty,
+    folder_seq: u32 = 0,
     /// Perfis completos já buscados (e a bio já interpretada).
     profiles: std.AutoHashMapUnmanaged([2]Id, types.Profile) = .empty,
     /// Muda quando `profiles` é esvaziado (dá para pedir os perfis de novo).
@@ -451,6 +461,8 @@ pub const Store = struct {
         s.faces.deinit(s.gpa);
         s.relationships.deinit(s.gpa);
         freeFolders(s.folders);
+        freeFolders(s.folders_server);
+        s.folder_ops.deinit(s.gpa);
         var pi = s.profiles.valueIterator();
         while (pi.next()) |pr| freeProfile(pr.*);
         s.profiles.deinit(s.gpa);
@@ -1755,8 +1767,20 @@ pub const Store = struct {
                 try s.putFace(mr.guild, mr.user, .{}, false, false);
             },
             .guild_folders => |list| {
-                freeFolders(s.folders);
-                s.folders = list;
+                freeFolders(s.folders_server);
+                s.folders_server = list;
+                s.refreshFolders();
+            },
+            .folders_saved => |fs| {
+                // As mudanças até `seq` já foram (gravadas ou não): saem da fila.
+                var k: usize = 0;
+                while (k < s.folder_ops.items.len and s.folder_ops.items[k].seq <= fs.seq) k += 1;
+                s.folder_ops.replaceRangeAssumeCapacity(0, k, &.{});
+                if (fs.folders) |list| {
+                    freeFolders(s.folders_server);
+                    s.folders_server = list;
+                }
+                s.refreshFolders();
             },
             .profile => |pr| {
                 // Teto de perfis guardados: passando, esquece todos (são
@@ -2117,6 +2141,80 @@ pub const Store = struct {
             it = s.faces.iterator();
         }
         _ = s.nick_gens.remove(guild_id);
+    }
+
+    /// Os servidores na ordem em que vieram (alocado com o c_allocator).
+    fn guildIds(s: *const Store) ![]Id {
+        const out = try ev_alloc.alloc(Id, s.guilds.items.len);
+        for (s.guilds.items, out) |g, *o| o.* = g.id;
+        return out;
+    }
+
+    /// A barra de novo: as pastas da conta com as mudanças daqui que ainda esperam
+    /// resposta (sem memória, fica como estava).
+    fn refreshFolders(s: *Store) void {
+        const next = blk: {
+            if (s.folder_ops.items.len == 0) {
+                const out = ev_alloc.alloc(types.GuildFolder, s.folders_server.len) catch return;
+                var n: usize = 0;
+                for (s.folders_server) |f| {
+                    const name = ev_alloc.dupe(u8, f.name) catch break;
+                    const guilds = ev_alloc.dupe(Id, f.guilds) catch {
+                        ev_alloc.free(name);
+                        break;
+                    };
+                    out[n] = .{ .id = f.id, .name = name, .color = f.color, .guilds = guilds };
+                    n += 1;
+                }
+                if (n < out.len) {
+                    freeFolders(out[0..n]);
+                    if (n == 0) ev_alloc.free(out);
+                    return;
+                }
+                break :blk out;
+            }
+            const known = s.guildIds() catch return;
+            defer ev_alloc.free(known);
+            const ops = ev_alloc.alloc(pastas.Op, s.folder_ops.items.len) catch return;
+            defer ev_alloc.free(ops);
+            for (s.folder_ops.items, ops) |p, *o| o.* = p.op;
+            break :blk pastas.applyAll(ev_alloc, s.folders_server, known, ops) catch return;
+        };
+        freeFolders(s.folders);
+        s.folders = next;
+    }
+
+    /// Uma mudança feita aqui (arrastar, menus): a barra muda na hora. Devolve o número
+    /// dela, ou null se não muda nada (nada a gravar).
+    pub fn editFolders(s: *Store, op: pastas.Op) !?u32 {
+        const known = try s.guildIds();
+        defer ev_alloc.free(known);
+        const cur = try pastas.applyAll(ev_alloc, s.folders, known, &.{});
+        defer freeFolders(cur);
+        const next = try pastas.applyAll(ev_alloc, s.folders, known, &.{op});
+        if (pastas.same(cur, next)) {
+            freeFolders(next);
+            return null;
+        }
+        s.folder_ops.append(s.gpa, .{ .seq = s.folder_seq +% 1, .op = op }) catch |e| {
+            freeFolders(next);
+            return e;
+        };
+        s.folder_seq +%= 1;
+        freeFolders(s.folders);
+        s.folders = next;
+        return s.folder_seq;
+    }
+
+    /// A pasta onde o servidor está na barra (0 = solto).
+    pub fn folderOf(s: *const Store, g: Id) u64 {
+        return pastas.folderOf(s.folders, g);
+    }
+
+    pub fn folderById(s: *const Store, id: u64) ?*const types.GuildFolder {
+        if (id == 0) return null;
+        for (s.folders) |*f| if (f.id == id) return f;
+        return null;
     }
 
     /// Servidores na ordem da barra lateral: primeiro os que não estão na
