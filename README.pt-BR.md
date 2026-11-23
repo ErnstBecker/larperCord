@@ -402,7 +402,8 @@ gateway falso pelo real não toca na interface.
 - [x] Permissões por canal (cadeado no que não dá pra ler), threads e fóruns
 - [x] Windows 10/11
 - [x] Bandeja do sistema, atualização assinada e scripts de instalação
-- [ ] Notificações nativas via D-Bus no Linux
+- [x] Abrir pelos servidores, canais e mensagens salvos, e sincronizar quando o Discord responder
+- [x] Notificações nativas via D-Bus no Linux
 - [x] Voz (DAVE/MLS + Opus)
 - [x] Calls em DM e grupo
 - [x] Rich Presence: mostrar o jogo que você está jogando, desligado por padrão
@@ -415,7 +416,6 @@ gateway falso pelo real não toca na interface.
 
 **A seguir**
 
-- [ ] Abrir pelos servidores, canais e mensagens salvos, e sincronizar quando o Discord responder
 - [ ] Atlas de texturas para avatares e emojis
 - [ ] Configurar servidor e cargos
 - [ ] Um editor de temas melhor

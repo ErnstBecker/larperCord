@@ -400,7 +400,8 @@ swapping the fake gateway for the real one doesn't touch the UI.
 - [x] Per-channel permissions (a padlock on what you can't read), threads and forums
 - [x] Windows 10/11
 - [x] System tray, signed self-updates and install scripts
-- [ ] Native notifications through D-Bus on Linux
+- [x] Open from the saved servers, channels and messages, then sync when Discord answers
+- [x] Native notifications through D-Bus on Linux
 - [x] Voice (DAVE/MLS + Opus)
 - [x] Calls in DMs and groups
 - [x] Rich Presence: show the game you're playing, off by default
@@ -413,7 +414,6 @@ swapping the fake gateway for the real one doesn't touch the UI.
 
 **Next**
 
-- [ ] Open from the saved servers, channels and messages, then sync when Discord answers
 - [ ] A texture atlas for avatars and emoji
 - [ ] Server and role settings
 - [ ] A better theme editor
