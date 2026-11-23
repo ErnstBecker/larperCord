@@ -85,6 +85,10 @@ QA_SUITE=notificacao run "notificações" $bin --qa --theme classico
 # 30 s, as páginas se juntando, sem repetir), e o apelido e a cor do cargo numa
 # mensagem antiga depois da resposta.
 QA_SUITE=membros run "membros das páginas" $bin --qa --theme classico
+# A busca do @ no servidor inteiro (op 8 com query): nunca em DM, um nome digitado depressa
+# é um pedido só, a mesma janela de 30 s do op 8 dos autores (e na frente dele), a escolha
+# que não pula quando a resposta chega e a menção de verdade ao enviar. Uns 40 s.
+QA_SUITE=busca-membros run "busca do @" $bin --qa --theme classico
 # Abrir pelo retrato em disco: a primeira grava, a segunda abre por ele com o READY
 # atrasado, sem apagar o cache entre as duas (as conversas da demonstração são as mesmas).
 epoch=$(( $(date +%s) * 1000 ))

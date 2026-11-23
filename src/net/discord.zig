@@ -46,6 +46,7 @@ const thread_json = @import("thread_json.zig");
 const user_json = @import("user_json.zig");
 const face_json = @import("face_json.zig");
 const member_ask = @import("member_ask.zig");
+const member_search = @import("member_search.zig");
 const envio_json = @import("envio_json.zig");
 const envio = @import("../core/envio.zig");
 const envio_limpo = @import("envio_limpo.zig");
@@ -150,7 +151,11 @@ pub const Gateway = struct {
     /// pedido recusado para a fila (achado pelo nonce, ou o mais novo daquele servidor).
     /// Do tamanho da fila: um RESUMED que solta tudo de uma vez não sobrescreve nenhum.
     members_sent: [16]member_ask.Sent = @splat(.{}),
+    /// O número do próximo op 8 (dos autores e da busca: o `nonce` diz qual é qual).
     members_seq: u32 = 0,
+    /// A busca do `@` (op 8 com `query`, net/member_search.zig): o que a caixa quer, o que
+    /// já veio e o que saiu. A fila e a janela são as do `outbox`.
+    search: member_search.Searcher = .{},
     /// Última lista de membros pedida (op 14): repetida depois de um READY.
     sub_guild: Id = 0,
     sub_channel: Id = 0,
@@ -421,6 +426,7 @@ pub const Gateway = struct {
             .fetch_bans => |fb| g.emit(.{ .bans = .{ .req = fb.req, .guild = fb.guild, .ok = false } }),
             .fetch_threads => |ft| g.emit(.{ .threads_page = .{ .channel = ft.channel, .archived = ft.archived, .private = ft.private, .failed = true } }),
             .entrada => |e| g.emit(.{ .entrada = entrada.dropped(e) }),
+            .search_members => |q| if (q.len > 0) g.emit(.{ .member_search = .{ .q = q, .result = .dropped } }),
             .interaction => |ic| switch (ic) {
                 .send => |s| g.emit(.{ .interaction = .{ .failed = .{ .nonce = s.nonce } } }),
                 .fetch_commands => |sc| g.emit(.{ .interaction = .{ .commands = .{ .key = sc.key(), .index = null } } }),
@@ -706,6 +712,18 @@ pub const Gateway = struct {
         g.flushOutbox();
     }
 
+    /// A busca do `@` (net/member_search.zig): entra na fila no lugar da que esperava, ou
+    /// nem entra (já respondida, coberta, a caminho, op 8 de lá acabado). Cada pedido da
+    /// caixa recebe uma resposta (`member_search`).
+    fn searchMembers(g: *Gateway, q: member_search.Query) void {
+        g.replySearch(g.search.ask(&g.outbox, q, monoMs()));
+        g.flushOutbox();
+    }
+
+    fn replySearch(g: *Gateway, out: member_search.Replies) void {
+        for (out.slice()) |r| g.emit(.{ .member_search = r });
+    }
+
     /// Manda o que tem vez agora (só depois do READY/RESUMED: antes, o Discord
     /// fecha com 4003).
     fn flushOutbox(g: *Gateway) void {
@@ -760,6 +778,19 @@ pub const Gateway = struct {
                 const slot = &g.members_sent[seq % g.members_sent.len];
                 if (slot.req.guild != 0) g.members_ask.unmark(&slot.req);
                 slot.* = .{ .seq = seq, .req = r };
+                g.members_seq +%= 1;
+                return true;
+            },
+            // A busca do `@` (net/member_search.zig), na janela do op 8 daquele servidor.
+            .search => |q| {
+                var buf: [512]u8 = undefined;
+                const seq = g.members_seq;
+                const p = member_search.payload(&buf, &q, seq) orelse return true;
+                if (debug_log.isOn()) std.log.info("gateway: op 8 buscando \"{s}\" no servidor {d}", .{ q.text(), q.guild });
+                if (!g.writeWs(p)) return false;
+                const sent_at = monoMs();
+                _ = g.outbox.hold(q.guild, sent_at + gw_budget.members_window_ms, sent_at);
+                if (g.search.wrote(q, seq)) |lost| g.emit(.{ .member_search = lost });
                 g.members_seq +%= 1;
                 return true;
             },
@@ -1303,6 +1334,7 @@ pub const Gateway = struct {
     /// conexão voltar não sai, e a call de lá acaba aqui também. Do lado do Discord ela
     /// já acabou: sem op 4 para sair, e sem tentar voltar com o token velho.
     fn leftGuild(g: *Gateway, id: Id) void {
+        g.replySearch(g.search.leftGuild(&g.outbox, id));
         g.outbox.forgetGuild(id);
         if (g.sub_guild == id) {
             g.sub_guild = 0;
@@ -1364,6 +1396,7 @@ pub const Gateway = struct {
             // Um op 8 escrito logo antes da queda pode não ter chegado: quem estava nos
             // pedidos sem resposta volta a poder ser pedido (no ritmo da fila).
             member_ask.releaseSent(&g.members_ask, &g.members_sent);
+            g.replySearch(g.search.lost());
             // O gateway reenviou o que perdemos; o estado local continua válido. O op 4
             // escrito pouco antes da queda que não teve resposta nesses eventos se perdeu:
             // vai de novo, antes do que ainda espera na fila.
@@ -1701,6 +1734,12 @@ pub const Gateway = struct {
             };
             if (j.id(j.get(d, "guild_id"))) |gid| g.outbox.membersAnswered(gid);
             g.ingestMembers(j.id(j.get(d, "guild_id")) orelse 0, d);
+            // A resposta de uma busca do `@`: depois dos membros (a lista se refaz com eles).
+            if (j.str(j.get(d, "nonce"))) |nonce| if (member_search.nonceSeq(nonce)) |seq| {
+                const last = (j.int(j.get(d, "chunk_index")) orelse 0) + 1 >= (j.int(j.get(d, "chunk_count")) orelse 1);
+                g.replySearch(g.search.answered(&g.outbox, seq, j.array(j.get(d, "members")).len, last));
+                g.flushOutbox();
+            };
             return;
         }
         if (std.mem.eql(u8, t, "MESSAGE_REACTION_REMOVE_ALL")) {
@@ -1888,6 +1927,13 @@ pub const Gateway = struct {
     /// servidor nenhum, todo op 8 espera.
     fn membersLimited(g: *Gateway, d: Value) void {
         var lim = member_ask.limited(d);
+        // Uma busca do `@` (nonce "s…"): o servidor espera do mesmo jeito, e ela só volta se
+        // a caixa ainda a quer (net/member_search.zig `limited`).
+        if (j.str(j.get(j.get(d, "meta") orelse Value.null, "nonce"))) |nonce| if (member_search.nonceSeq(nonce)) |seq| {
+            g.replySearch(g.search.limited(&g.outbox, monoMs(), seq, lim.guild, lim.wait_ms));
+            g.flushOutbox();
+            return;
+        };
         var back: ?member_ask.Request = null;
         if (member_ask.pickSent(&g.members_sent, lim)) |x| {
             back = x.req;
@@ -1896,6 +1942,8 @@ pub const Gateway = struct {
             x.req.guild = 0;
         }
         if (!g.outbox.holdMembers(monoMs(), lim.guild, lim.wait_ms, if (back) |*r| r else null)) g.members_ask.unmark(&back.?);
+        // Sem o nosso nonce, pode ter sido uma busca daquele servidor: fica sem resposta.
+        g.replySearch(if (lim.seq == null) g.search.limitedUnknown(&g.outbox, lim.guild) else g.search.afterRefusal(&g.outbox));
         g.flushOutbox();
     }
 
@@ -2872,6 +2920,7 @@ pub const Gateway = struct {
         for (g.outbox.members[0..g.outbox.members_n]) |*w| g.members_ask.unmark(&w.req);
         // O que saiu na sessão velha e não teve resposta não vai ter mais.
         member_ask.releaseSent(&g.members_ask, &g.members_sent);
+        g.replySearch(g.search.newSession(&g.outbox));
         g.outbox.forgetPending();
         g.voice_unconfirmed = null;
         // Servidores que deixamos com a conexão caída (kick, ban): o READY não os traz e
@@ -4384,6 +4433,7 @@ pub const Gateway = struct {
                 g.subscribe(sg.guild, sg.channel, sg.thread);
             },
             .channel_info => |gid| g.queueOp(.{ .channel_info = gid }),
+            .search_members => |q| g.searchMembers(q),
             .relationship => |r| {
                 const path = std.fmt.bufPrint(&path_buf, "/users/@me/relationships/{d}", .{r.user}) catch return;
                 // De onde foi o clique, como o cliente oficial manda.
