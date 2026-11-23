@@ -29,6 +29,9 @@
 - On Windows, notifications are real toasts with the buttons and a text box next to Reply, registered for your user only (no administrator), without changing how the window groups with the Start menu shortcut. If Windows doesn't take them, they go out as the tray balloon as before. Reminders, calls, updates and plugin notifications keep coming, now with a click that brings the window up.
 - The QA has a new suite with a private D-Bus session and a fake notification server inside the app's own binary: KDE-style and GNOME-style servers, mark as read and an inline reply with the window in the tray, a reply blocked by slowmode, the click with the activation token, the server going away, and no session at all.
 
+**Text in any language**
+- The Terminal mascot's name in Settings → Mascot goes through the translation, like Classic next to it (#20).
+
 ## 0.6.7
 
 **Floating window**
