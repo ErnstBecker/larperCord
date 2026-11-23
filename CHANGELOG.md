@@ -35,6 +35,7 @@
 
 **Text in any language**
 - The Terminal mascot's name in Settings → Mascot goes through the translation, like Classic next to it (#20).
+- In English, the mascot's "Games" switch (the d20, feeding it, hide and seek) is now "Tricks", so it no longer shares its name with the Games page under Privacy; in Japanese the two are 遊び and ゲーム (#20).
 
 **Server folders**
 - Folders in the server bar can be edited now, and the change goes to your Discord account like in the official app: drag a server onto another to make a folder with both, drag servers into a folder, out of it and between the others, and drag a whole folder somewhere else. Right-click a folder for Folder Settings (a name, and a color from the palette or any hex code), Mark Folder as Read (every server in it, in one request) and Remove Folder (its servers stay, loose, where it was); a server's menu has Add to Folder… (your folders or a new one) and Remove from Folder. A folder without a name shows its servers' names. Opening and closing a folder stays on this computer.
