@@ -463,7 +463,7 @@ fn prepNotify(app: *App) void {
     an.notify_send = ns;
     an.qa_ligado = true;
     const bus = std.fmt.bufPrintSentinel(&bus_buf, "unix:path={s}/sem-barramento", .{dir}, 0) catch return;
-    _ = c.setenv("DBUS_SESSION_BUS_ADDRESS", bus.ptr, 1);
+    _ = c.SDL_setenv_unsafe("DBUS_SESSION_BUS_ADDRESS", bus.ptr, 1);
     notif_dbus.tentarDeNovo();
     ns0 = an.medidas.pelo_notify_send;
     _ = app;
@@ -485,7 +485,7 @@ fn notifiedInTray(app: *App) bool {
 fn endNotify(_: *App) void {
     an.notify_send = "notify-send";
     an.qa_ligado = false;
-    _ = c.unsetenv("DBUS_SESSION_BUS_ADDRESS");
+    _ = c.SDL_unsetenv_unsafe("DBUS_SESSION_BUS_ADDRESS");
 }
 
 /// De volta: janela, renderizador e o atlas das fontes de pé, o quadro desenhado (com
