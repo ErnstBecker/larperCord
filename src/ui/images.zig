@@ -486,7 +486,7 @@ pub const Cache = struct {
             } else if (cache.renderer == null) {
                 // Na bandeja: o que ainda chega não vira textura nem fica em pixels
                 // (é pedido de novo se aparecer quando a janela voltar).
-                cache.forget(r.key);
+                cache.forgetPending(r.key);
                 cache.freed_bytes +|= r.px.bytes();
                 freeResult(r);
             } else cache.backlog.append(alloc, r) catch freeResult(r);
@@ -637,7 +637,7 @@ pub const Cache = struct {
     }
 
     /// Uma entrada que ainda não tem imagem sai do cache (o pedido dela foi descartado).
-    fn forget(cache: *Cache, key: []const u8) void {
+    fn forgetPending(cache: *Cache, key: []const u8) void {
         const e = cache.map.getPtr(key) orelse return;
         if (e.state == .loading) cache.drop(key);
     }
@@ -655,11 +655,11 @@ pub const Cache = struct {
             for (u.frames[0..u.n]) |f| c.SDL_DestroyTexture(f.tex);
             alloc.free(u.frames);
             cache.uploading = null;
-            cache.forget(u.r.key);
+            cache.forgetPending(u.r.key);
             freeResult(u.r);
         }
         for (cache.backlog.items) |res| {
-            cache.forget(res.key);
+            cache.forgetPending(res.key);
             freeResult(res);
         }
         cache.backlog.clearRetainingCapacity();
@@ -672,7 +672,7 @@ pub const Cache = struct {
                 cache.jobs.push(jb);
                 continue;
             }
-            cache.forget(jb.key);
+            cache.forgetPending(jb.key);
             freeJob(jb);
         }
         // As que ficam em pixels saem da GPU de uma vez, por uma textura de desenho só.
