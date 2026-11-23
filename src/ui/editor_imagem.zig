@@ -65,7 +65,8 @@ const Editor = struct {
     prev: []u8,
     pw: u32,
     ph: u32,
-    tex: *c.SDL_Texture,
+    /// Null depois de a janela ir para a bandeja (`dropTexture`): refeita de `prev`.
+    tex: ?*c.SDL_Texture,
     corte: ie.Ret,
     areas: std.ArrayList(ie.Area) = .empty,
     passos: std.ArrayList(Passo) = .empty,
@@ -88,7 +89,7 @@ var ed: ?Editor = null;
 /// lista de desenho do quadro.
 pub fn fechar() void {
     const e: *Editor = if (ed) |*x| x else return;
-    c.SDL_DestroyTexture(e.tex);
+    if (e.tex) |t| c.SDL_DestroyTexture(t);
     alloc.free(e.px);
     alloc.free(e.base);
     alloc.free(e.prev);
@@ -96,6 +97,25 @@ pub fn fechar() void {
     e.areas.deinit(alloc);
     e.passos.deinit(alloc);
     ed = null;
+}
+
+/// O renderizador vai embora (a janela na bandeja, App.releaseGpu). O editor aberto
+/// continua com o que foi feito: a textura é refeita da prévia no próximo quadro dele.
+pub fn dropTexture() void {
+    const e: *Editor = if (ed) |*x| x else return;
+    if (e.tex) |t| c.SDL_DestroyTexture(t);
+    e.tex = null;
+}
+
+/// A textura da prévia (refeita depois da bandeja). Null se o SDL não deu.
+fn textura(ctx: *d.Ctx, e: *Editor) ?*c.SDL_Texture {
+    if (e.tex) |t| return t;
+    const t = c.SDL_CreateTexture(ctx.images.renderer, c.SDL_PIXELFORMAT_RGBA32, c.SDL_TEXTUREACCESS_STATIC, @intCast(e.pw), @intCast(e.ph)) orelse return null;
+    _ = c.SDL_SetTextureScaleMode(t, if (e.nitida) c.SDL_SCALEMODE_NEAREST else c.SDL_SCALEMODE_LINEAR);
+    _ = c.SDL_SetTextureBlendMode(t, c.SDL_BLENDMODE_BLEND);
+    _ = c.SDL_UpdateTexture(t, null, e.prev.ptr, @intCast(e.pw * 4));
+    e.tex = t;
+    return t;
 }
 
 /// O popup do editor fechou (Pronto, Cancelar, Esc, outro popup por cima): a memória
@@ -192,7 +212,7 @@ fn refazerPrevia(ctx: *d.Ctx, e: *Editor) void {
     const kx = @as(f32, @floatFromInt(e.pw)) / @as(f32, @floatFromInt(e.w));
     const ky = @as(f32, @floatFromInt(e.ph)) / @as(f32, @floatFromInt(e.h));
     for (e.areas.items) |a| ie.esconder(e.prev, e.pw, e.ph, a, 0, 0, kx, ky);
-    _ = c.SDL_UpdateTexture(e.tex, null, e.prev.ptr, @intCast(e.pw * 4));
+    if (e.tex) |t| _ = c.SDL_UpdateTexture(t, null, e.prev.ptr, @intCast(e.pw * 4));
     // A mesma textura com outra imagem: o quadro não pode ser pulado por "igual".
     ctx.images.texture_changed = true;
 }
@@ -441,11 +461,13 @@ pub fn draw(ctx: *d.Ctx, index: u8) void {
     const nitida = v.w * ctx.io.*.DisplayFramebufferScale.x > @as(f32, @floatFromInt(e.pw)) + 0.5;
     if (nitida != e.nitida) {
         e.nitida = nitida;
-        _ = c.SDL_SetTextureScaleMode(e.tex, if (nitida) c.SDL_SCALEMODE_NEAREST else c.SDL_SCALEMODE_LINEAR);
+        if (e.tex) |t| _ = c.SDL_SetTextureScaleMode(t, if (nitida) c.SDL_SCALEMODE_NEAREST else c.SDL_SCALEMODE_LINEAR);
         ctx.images.texture_changed = true;
     }
-    const ref: c.ImTextureRef = .{ ._TexData = null, ._TexID = @intFromPtr(e.tex) };
-    c.ImDrawList_AddImage(dl, ref, d.v(v.x, v.y), d.v(v.right(), v.bottom()));
+    if (textura(ctx, e)) |t| {
+        const ref: c.ImTextureRef = .{ ._TexData = null, ._TexID = @intFromPtr(t) };
+        c.ImDrawList_AddImage(dl, ref, d.v(v.x, v.y), d.v(v.right(), v.bottom()));
+    }
     interagir(ctx, e, m.tela, v, s);
     const cr = naTela(e.corte, v, s);
     if (!e.corte.eql(e.inteira()) or e.ferramenta == .cortar) {

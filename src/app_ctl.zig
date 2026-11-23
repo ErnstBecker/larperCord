@@ -242,7 +242,7 @@ fn key(app: *App) u64 {
         mention_sum,
         st.muted_channels.count(),
         @intFromBool(app.in_tray),
-        c.SDL_GetWindowFlags(app.win.window) & (c.SDL_WINDOW_HIDDEN | c.SDL_WINDOW_MINIMIZED),
+        app.win.flags() & (c.SDL_WINDOW_HIDDEN | c.SDL_WINDOW_MINIMIZED),
         st.settings.my_status,
         // O ping muda a cada heartbeat; de 10 em 10 ms basta para a barra.
         store.latency_ms / 10,
@@ -317,7 +317,7 @@ fn channelName(app: *App, ch: Id) []const u8 {
 }
 
 fn windowState(app: *App) []const u8 {
-    const f = c.SDL_GetWindowFlags(app.win.window);
+    const f = app.win.flags();
     if (app.in_tray or f & c.SDL_WINDOW_HIDDEN != 0) return "hidden";
     if (f & c.SDL_WINDOW_MINIMIZED != 0) return "minimized";
     return "shown";

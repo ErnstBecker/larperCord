@@ -37,10 +37,28 @@ pub const Wake = enum(i32) {
 pub var active_renderer: [32]u8 = @splat(0);
 pub var renderer_fallback = false;
 
+/// O lugar e o tamanho da janela como ela estava fora de maximizada e de tela cheia,
+/// e se estava assim (para a janela recriada voltar igual; ver `Window.recreate`).
+pub const Geo = struct {
+    x: c_int = 0,
+    y: c_int = 0,
+    w: c_int = 1280,
+    h: c_int = 800,
+    /// O sistema deixa o app pôr a janela num lugar (o Wayland não deixa).
+    pos: bool = false,
+    maximized: bool = false,
+    fullscreen: bool = false,
+};
+
 pub const Window = struct {
-    window: *c.SDL_Window,
-    renderer: *c.SDL_Renderer,
+    /// Null com a janela na bandeja (App.releaseGpu): a janela, o renderizador e as
+    /// texturas foram embora, e voltam quando ela é mostrada (`recreate`).
+    window: ?*c.SDL_Window,
+    renderer: ?*c.SDL_Renderer,
     wake_type: u32,
+    geo: Geo = .{},
+    /// A escala da tela da janela que foi embora (`scale` devolve esta sem janela).
+    last_scale: f32 = 1,
 
     /// `wanted`: o renderizador das configurações (null = automático).
     pub fn init(title: [*:0]const u8, w: c_int, h: c_int, wanted: ?[*:0]const u8) !Window {
@@ -62,10 +80,10 @@ pub const Window = struct {
         }
         errdefer c.SDL_Quit();
         // Navegador: o canvas fica opaco (transparente, apareceria a página por trás).
-        var flags = c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY | (if (sys.web) 0 else c.SDL_WINDOW_TRANSPARENT);
+        var wflags = c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY | (if (sys.web) 0 else c.SDL_WINDOW_TRANSPARENT);
         // LARPER_HIDDEN=1: janela escondida (medir desempenho com a GPU de verdade).
-        if (c.SDL_getenv("LARPER_HIDDEN") != null) flags |= c.SDL_WINDOW_HIDDEN;
-        const window = c.SDL_CreateWindow(title, w, h, flags) orelse return error.SdlWindow;
+        if (c.SDL_getenv("LARPER_HIDDEN") != null) wflags |= c.SDL_WINDOW_HIDDEN;
+        const window = c.SDL_CreateWindow(title, w, h, wflags) orelse return error.SdlWindow;
         errdefer c.SDL_DestroyWindow(window);
         // On Windows the requested size is in pixels: at 150% the window would open at 2/3 size.
         const s = contentScale(window);
@@ -92,16 +110,102 @@ pub const Window = struct {
             @memcpy(active_renderer[0..len], span[0..len]);
         }
         if (@import("timeline.zig").enabled) std.log.info("SDL video: {s}, renderer: {s}", .{ c.SDL_GetCurrentVideoDriver(), c.SDL_GetRendererName(renderer) });
-        _ = c.SDL_SetRenderVSync(renderer, 1);
-        _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_NONE);
+        setupRenderer(renderer);
         const wake_type = c.SDL_RegisterEvents(1);
-        return .{ .window = window, .renderer = renderer, .wake_type = wake_type };
+        var win: Window = .{ .window = window, .renderer = renderer, .wake_type = wake_type };
+        win.remember();
+        return win;
     }
 
     pub fn deinit(win: *Window) void {
-        c.SDL_DestroyRenderer(win.renderer);
-        c.SDL_DestroyWindow(win.window);
+        if (win.renderer) |r| c.SDL_DestroyRenderer(r);
+        if (win.window) |w| c.SDL_DestroyWindow(w);
         c.SDL_Quit();
+    }
+
+    /// As flags da janela; sem ela (na bandeja, solta), escondida.
+    pub fn flags(win: *const Window) c.SDL_WindowFlags {
+        const w = win.window orelse return c.SDL_WINDOW_HIDDEN;
+        return c.SDL_GetWindowFlags(w);
+    }
+
+    /// `contentScale` da janela, ou a da última que existiu.
+    pub fn scale(win: *const Window) f32 {
+        const w = win.window orelse return win.last_scale;
+        return contentScale(w);
+    }
+
+    /// Guarda o lugar e o tamanho de agora, se a janela está normal (fora de maximizada,
+    /// tela cheia e minimizada), e se está maximizada ou em tela cheia. O laço chama a
+    /// cada janela movida ou redimensionada, e `release` antes de ela ir embora.
+    pub fn remember(win: *Window) void {
+        const w = win.window orelse return;
+        const f = c.SDL_GetWindowFlags(w);
+        if (f & c.SDL_WINDOW_MINIMIZED != 0) return;
+        win.geo.maximized = f & c.SDL_WINDOW_MAXIMIZED != 0;
+        win.geo.fullscreen = f & c.SDL_WINDOW_FULLSCREEN != 0;
+        if (win.geo.maximized or win.geo.fullscreen) return;
+        var gw: c_int = 0;
+        var gh: c_int = 0;
+        if (c.SDL_GetWindowSize(w, &gw, &gh) and gw > 0 and gh > 0) {
+            win.geo.w = gw;
+            win.geo.h = gh;
+        }
+        const driver = if (c.SDL_GetCurrentVideoDriver()) |v| std.mem.span(v) else "";
+        win.geo.pos = !std.mem.eql(u8, driver, "wayland") and c.SDL_GetWindowPosition(w, &win.geo.x, &win.geo.y);
+    }
+
+    /// A janela foi para a bandeja (App.releaseGpu): o renderizador (o contexto da GPU,
+    /// com as texturas que ainda houver) e a janela (com a superfície dela) vão embora.
+    /// Quem chama já soltou as texturas e os backends do ImGui.
+    pub fn release(win: *Window) void {
+        const w = win.window orelse return;
+        win.remember();
+        win.last_scale = contentScale(w);
+        if (win.renderer) |r| c.SDL_DestroyRenderer(r);
+        c.SDL_DestroyWindow(w);
+        win.renderer = null;
+        win.window = null;
+    }
+
+    /// A janela de novo, escondida, com o tamanho, o lugar, a maximização e a tela cheia
+    /// de antes, transparente como a da abertura (o tema de vidro precisa) e com o ícone
+    /// do mascote, e o renderizador que estava aberto (ou o automático, ou o por
+    /// software). Falso: não deu (fica sem janela).
+    pub fn recreate(win: *Window, classic_icon: bool) bool {
+        if (win.window != null) return true;
+        const props = c.SDL_CreateProperties();
+        defer c.SDL_DestroyProperties(props);
+        var f: c.SDL_WindowFlags = c.SDL_WINDOW_RESIZABLE | c.SDL_WINDOW_HIGH_PIXEL_DENSITY | c.SDL_WINDOW_HIDDEN | (if (sys.web) 0 else c.SDL_WINDOW_TRANSPARENT);
+        if (win.geo.maximized) f |= c.SDL_WINDOW_MAXIMIZED;
+        if (win.geo.fullscreen) f |= c.SDL_WINDOW_FULLSCREEN;
+        _ = c.SDL_SetStringProperty(props, c.SDL_PROP_WINDOW_CREATE_TITLE_STRING, "larperCord");
+        _ = c.SDL_SetNumberProperty(props, c.SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, @intCast(f));
+        _ = c.SDL_SetNumberProperty(props, c.SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, win.geo.w);
+        _ = c.SDL_SetNumberProperty(props, c.SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, win.geo.h);
+        if (win.geo.pos) {
+            _ = c.SDL_SetNumberProperty(props, c.SDL_PROP_WINDOW_CREATE_X_NUMBER, win.geo.x);
+            _ = c.SDL_SetNumberProperty(props, c.SDL_PROP_WINDOW_CREATE_Y_NUMBER, win.geo.y);
+        }
+        const window = c.SDL_CreateWindowWithProperties(props) orelse {
+            std.log.err("a janela não voltou: {s}", .{c.SDL_GetError()});
+            return false;
+        };
+        if (decodeIcon(iconPng(classic_icon, .window))) |icon| {
+            _ = c.SDL_SetWindowIcon(window, icon);
+            c.SDL_DestroySurface(icon);
+        }
+        // O que abriu na abertura (já passou pelo LARPER_RENDERER e pelas configurações).
+        const name: ?[*:0]const u8 = if (active_renderer[0] != 0) @ptrCast(&active_renderer) else null;
+        const renderer = c.SDL_CreateRenderer(window, name) orelse c.SDL_CreateRenderer(window, null) orelse c.SDL_CreateRenderer(window, "software") orelse {
+            std.log.err("o renderizador não voltou: {s}", .{c.SDL_GetError()});
+            c.SDL_DestroyWindow(window);
+            return false;
+        };
+        setupRenderer(renderer);
+        win.window = window;
+        win.renderer = renderer;
+        return true;
     }
 
     /// Pode ser chamado de qualquer thread.
@@ -124,11 +228,17 @@ pub const Window = struct {
     }
 
     pub fn screenshot(win: *Window, path: [*:0]const u8) bool {
-        const surface = c.SDL_RenderReadPixels(win.renderer, null) orelse return false;
+        const surface = c.SDL_RenderReadPixels(win.renderer orelse return false, null) orelse return false;
         defer c.SDL_DestroySurface(surface);
         return c.SDL_SavePNG(surface, path);
     }
 };
+
+/// O que vale para todo renderizador da janela principal (o da abertura e o recriado).
+fn setupRenderer(renderer: *c.SDL_Renderer) void {
+    _ = c.SDL_SetRenderVSync(renderer, 1);
+    _ = c.SDL_SetRenderDrawBlendMode(renderer, c.SDL_BLENDMODE_NONE);
+}
 
 /// How much the display scale asks for beyond what SDL already applies. On macOS
 /// and Wayland the window is already in points (1); on Windows and X11 it is in

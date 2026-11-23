@@ -240,6 +240,16 @@ fn replay(l: *Layer, dl: *c.ImDrawList, alpha: f32) void {
     }
 }
 
+/// O renderizador vai embora (a janela na bandeja, App.releaseGpu): as texturas das
+/// camadas saem e são refeitas no renderizador novo no próximo `begin`.
+pub fn dropTextures() void {
+    for (live[0..n_live]) |l| {
+        dropTexture(l);
+        l.renderer = null;
+        l.armed = false;
+    }
+}
+
 /// Solta as texturas e a memória das camadas (antes do renderer e do ImGui irem embora).
 pub fn shutdown() void {
     for (live[0..n_live]) |l| {

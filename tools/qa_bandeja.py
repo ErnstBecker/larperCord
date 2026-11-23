@@ -251,6 +251,16 @@ def close_window():
     return True
 
 
+def geometry():
+    """Tamanho e lugar (na tela) da janela aberta."""
+    ws = mapped()
+    if not ws:
+        return None
+    g = ws[0].get_geometry()
+    t = ws[0].translate_coords(root, 0, 0)
+    return (g.width, g.height, -t.x, -t.y)
+
+
 def focus(w):
     """Dá o foco do teclado para a janela (sem gerenciador de janelas, direto no X)."""
     w.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
@@ -503,19 +513,26 @@ def full_flow():
         check("e não acorda sozinho (fica no poll até o painel ou o app falarem)", wake_h <= 0.5, f"{wake_h:.2f}/s")
 
     section("fechar, Abrir e um segundo larperCord")
+    geo_open = geometry()
+    rss_open = rss_of(a.p.pid)
     close_window()
     check("fechar esconde a janela", wait_until(lambda: not mapped(), 3) is True)
     time.sleep(0.3)
     check("e o mesmo ícone fica, no mesmo processo", panel.items() == [item] and helpers(a) == kids, f"{panel.items()} {helpers(a)}")
     check("o processo continua", a.alive())
+    # Na bandeja a janela vai embora com o renderizador e as texturas, não só se esconde.
+    check("na bandeja, a janela sai do X (destruída, não só escondida)", wait_until(lambda: not windows(), 3) is True, f"{len(windows())} janela(s)")
     time.sleep(2)
     cpu_hidden = cpu_percent(a, 10)
     check("escondido: quase nada de CPU", cpu_hidden < 1.0, f"{cpu_hidden:.2f}% com a janela escondida, {cpu_open:.2f}% com ela aberta")
-    print(f"       RAM (PSS): {pss_open} KB aberta, {a.pss_kb()} KB na bandeja")
+    pss_tray, rss_tray = a.pss_kb(), rss_of(a.p.pid)
+    print(f"       RAM: PSS {pss_open} KB aberta, {pss_tray} KB na bandeja; RSS {rss_open} KB aberta, {rss_tray} KB na bandeja")
+    check("na bandeja usa menos memória que aberta", pss_tray < pss_open - 2048, f"{pss_open - pss_tray} KB a menos")
     panel.click(item, open_id)
     check("Abrir volta a janela", bool(wait_until(mapped, 5)))
     time.sleep(1.0)
     check("voltou desenhada, não em branco", painted(), "")
+    check("com o mesmo tamanho e no mesmo lugar", geometry() == geo_open, f"{geometry()} agora, {geo_open} antes")
     check("e o ícone fica", panel.items() == [item] and helpers(a) == kids)
     cpu_back = cpu_percent(a, 5)
     check("aberta de novo, volta ao custo de antes", cpu_back < cpu_open + 0.5, f"{cpu_back:.2f}% agora, {cpu_open:.2f}% antes de ir para a bandeja")

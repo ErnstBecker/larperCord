@@ -377,6 +377,18 @@ pub fn pause() void {
     if (p.playing) setPlaying(p, false);
 }
 
+/// O renderizador vai embora (a janela na bandeja, App.releaseGpu): a textura sai.
+/// Pausado, o vídeo fica onde estava: o quadro de agora é decodificado de novo e sobe
+/// para a textura nova quando ele voltar a aparecer. O que já tinha acabado volta à
+/// prévia (é o mesmo que o play do fim faria: recomeçar).
+pub fn dropTexture() void {
+    const p = if (cur) |*pp| pp else return;
+    if (p.ended) return stop();
+    if (p.tex) |t| c.SDL_DestroyTexture(t);
+    p.tex = null;
+    if (p.have_frame) seek(p, @intFromFloat(p.pos_ms));
+}
+
 fn seek(p: *Player, ms: i64) void {
     const sh = p.sh;
     sh.lock();
@@ -413,7 +425,7 @@ fn saveVolume(ctx: *d.Ctx) void {
 }
 
 /// Avança o relógio e sobe o quadro da vez.
-fn update(p: *Player, renderer: *c.SDL_Renderer, now_ms: i64) void {
+fn update(p: *Player, renderer: ?*c.SDL_Renderer, now_ms: i64) void {
     const sh = p.sh;
     const dt: f64 = @floatFromInt(std.math.clamp(now_ms - p.clock_ms, 0, 250));
     p.clock_ms = now_ms;

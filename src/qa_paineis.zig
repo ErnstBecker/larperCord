@@ -657,7 +657,7 @@ fn scrollBottom(app: *App) void {
 }
 fn windowFullscreen(app: *App) bool {
     _ = c.SDL_SyncWindow(app.win.window);
-    return c.SDL_GetWindowFlags(app.win.window) & c.SDL_WINDOW_FULLSCREEN != 0;
+    return app.win.flags() & c.SDL_WINDOW_FULLSCREEN != 0;
 }
 fn windowNotFullscreen(app: *App) bool {
     return !windowFullscreen(app);

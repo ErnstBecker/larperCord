@@ -1,5 +1,7 @@
-//! Devolver memória com a glibc. Em outro sistema, nada aqui faz efeito.
+//! Devolver memória ao sistema: com a glibc no Linux, e no Windows ao ir para a bandeja
+//! (`giveBack`). Em outro sistema, nada aqui faz efeito.
 //! (Limitar as arenas com M_ARENA_MAX foi medido e não ganhou além do ruído.)
+const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c");
 
@@ -20,6 +22,18 @@ pub fn init() void {
 /// sozinho). Leva milissegundos: fora da thread da UI.
 pub fn trim() void {
     if (glibc) _ = c.malloc_trim(0);
+}
+
+/// A janela foi para a bandeja (App.releaseGpu): além do `trim` (que o tique já faz
+/// junto), no Windows cada heap do processo se compacta e o conjunto de trabalho
+/// esvazia: o que não é usado sai da RAM, e o que for usado volta sozinho. Fora da
+/// thread da UI, e não em call (a voz não pode esperar uma página voltar).
+pub fn giveBack() void {
+    if (builtin.os.tag != .windows) return;
+    var heaps: [64]c.HANDLE = undefined;
+    const n = c.GetProcessHeaps(heaps.len, &heaps);
+    for (heaps[0..@min(n, heaps.len)]) |h| _ = c.HeapCompact(h, 0);
+    _ = c.SetProcessWorkingSetSize(c.GetCurrentProcess(), std.math.maxInt(usize), std.math.maxInt(usize));
 }
 
 pub const Heap = struct { used_kb: u32, free_kb: u32 };

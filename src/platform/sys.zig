@@ -432,6 +432,9 @@ pub fn setToastMascot(classic: bool) void {
 pub fn toast(hwnd: ?*anyopaque, now_ms: i64, title: []const u8, body: []const u8) void {
     if (!windows) return;
     const h = hwnd orelse return;
+    // O ícone do balão anterior é de outra janela (a principal saiu na bandeja, ou o
+    // ícone da bandeja foi refeito): sai antes de pôr o desta.
+    if (toast_hwnd != null and toast_hwnd != h) toastExpire(0, true);
     var nid = std.mem.zeroes(c.NOTIFYICONDATAW);
     nid.cbSize = @sizeOf(c.NOTIFYICONDATAW);
     nid.hWnd = @ptrCast(@alignCast(h));
