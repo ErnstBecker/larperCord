@@ -11,6 +11,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const debug_log = @import("../platform/debug_log.zig");
+const descreve = @import("descreve.zig");
 // O app trava e mede o tempo com o SDL, como o resto do código; os testes (sem SDL) com a
 // biblioteca padrão (como em plugins/sync.zig).
 const c = if (builtin.is_test) struct {} else @import("c");
@@ -721,93 +722,22 @@ pub const EvLog = struct {
 pub var evs: EvLog = .{};
 
 /// Uma mensagem do barramento (event.zig) em texto curto: a etiqueta e os campos, com
-/// textos entre aspas, listas resumidas e profundidade limitada.
+/// textos entre aspas, listas resumidas e profundidade limitada (descreve.zig).
 pub fn evento(kind: EvKind, value: anytype) void {
     if (!gravando()) return;
     var buf: [1536]u8 = undefined;
     var w = std.Io.Writer.fixed(&buf);
     const T = @TypeOf(value);
     const tag: []const u8 = switch (@typeInfo(T)) {
-        .@"union" => @tagName(std.meta.activeTag(value)),
+        .@"union" => descreve.uniao(&w, value),
         // Uma etiqueta sem dados (`.quit`) que ainda não virou a união.
         .@"enum" => @tagName(value),
-        else => @typeName(T),
+        else => blk: {
+            descreve.valor(&w, value);
+            break :blk @typeName(T);
+        },
     };
-    switch (@typeInfo(T)) {
-        .@"union" => |u| inline for (u.field_names) |name| {
-            if (std.meta.activeTag(value) == @field(std.meta.Tag(T), name)) {
-                curto(&w, @field(value, name), 0);
-            }
-        },
-        .@"enum" => {},
-        else => curto(&w, value, 0),
-    }
     evs.add(kind, tag, w.buffered());
-}
-
-/// Profundidade em tempo de compilação: os tipos lá do fundo (o READY inteiro, por exemplo)
-/// nem chegam a gerar código, e o binário não cresce com cada struct do app.
-fn curto(w: *std.Io.Writer, v: anytype, comptime depth: u8) void {
-    const T = @TypeOf(v);
-    switch (@typeInfo(T)) {
-        .void => {},
-        .bool => w.writeAll(if (v) "true" else "false") catch {},
-        .int, .comptime_int => w.print("{d}", .{v}) catch {},
-        .float, .comptime_float => w.print("{d:.3}", .{v}) catch {},
-        // Num enum aberto, um valor sem nome não tem @tagName: vai o número.
-        .@"enum" => |en| if (en.mode == .exhaustive) w.writeAll(@tagName(v)) catch {} else w.print("{d}", .{@intFromEnum(v)}) catch {},
-        .optional => if (v) |x| curto(w, x, depth) else w.writeAll("null") catch {},
-        .pointer => |p| switch (p.size) {
-            .slice => if (p.child == u8) {
-                const s: []const u8 = v;
-                w.writeByte('"') catch {};
-                w.writeAll(s[0..@min(s.len, 160)]) catch {};
-                if (s.len > 160) w.writeAll("…") catch {};
-                w.writeByte('"') catch {};
-            } else {
-                w.print("[{d}]", .{v.len}) catch {};
-            },
-            .one => switch (@typeInfo(p.child)) {
-                .@"opaque", .@"fn" => w.writeAll("ptr") catch {},
-                else => if (depth < 2) curto(w, v.*, depth + 1) else w.writeAll("*") catch {},
-            },
-            else => w.writeAll("ptr") catch {},
-        },
-        .array => |a| if (a.child == u8) {
-            const s = std.mem.sliceTo(&v, 0);
-            w.print("\"{s}\"", .{s[0..@min(s.len, 160)]}) catch {};
-        } else w.print("[{d}]", .{a.len}) catch {},
-        .@"struct" => |s| {
-            if (depth >= 2) {
-                w.writeAll("{…}") catch {};
-                return;
-            }
-            w.writeAll("{") catch {};
-            inline for (s.field_names, 0..) |name, i| {
-                if (i > 0) w.writeAll(", ") catch {};
-                w.writeAll(name ++ "=") catch {};
-                curto(w, @field(v, name), depth + 1);
-            }
-            w.writeAll("}") catch {};
-        },
-        .@"union" => |u| {
-            if (u.tag_type == null) {
-                w.writeAll("{union}") catch {};
-                return;
-            }
-            const tag = std.meta.activeTag(v);
-            w.writeAll(@tagName(tag)) catch {};
-            if (depth >= 2) return;
-            inline for (u.field_names, u.field_types) |name, ty| {
-                if (ty != void and tag == @field(std.meta.Tag(T), name)) {
-                    w.writeAll("(") catch {};
-                    curto(w, @field(v, name), depth + 1);
-                    w.writeAll(")") catch {};
-                }
-            }
-        },
-        else => w.writeAll("?") catch {},
-    }
 }
 
 const t = std.testing;

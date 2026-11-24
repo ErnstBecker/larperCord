@@ -8,6 +8,7 @@ test {
     _ = @import("net/retry.zig");
     _ = @import("inspect/captura.zig");
     _ = @import("inspect/registros.zig");
+    _ = @import("inspect/descreve.zig");
     _ = @import("inspect/curl_insp.zig");
     _ = @import("inspect/kit.zig");
     _ = @import("inspect/json_view.zig");
