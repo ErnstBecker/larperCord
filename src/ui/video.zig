@@ -114,6 +114,8 @@ const Player = struct {
     link_len: usize = 0,
     tex: ?*c.SDL_Texture = null,
     have_frame: bool = false,
+    /// O tempo do quadro que está na tela (`dropTexture` volta a ele).
+    frame_pts: i64 = 0,
     pos_ms: f64 = 0,
     playing: bool = true,
     ended: bool = false,
@@ -378,15 +380,15 @@ pub fn pause() void {
 }
 
 /// O renderizador vai embora (a janela na bandeja, App.releaseGpu): a textura sai.
-/// Pausado, o vídeo fica onde estava: o quadro de agora é decodificado de novo e sobe
-/// para a textura nova quando ele voltar a aparecer. O que já tinha acabado volta à
-/// prévia (é o mesmo que o play do fim faria: recomeçar).
+/// Pausado, o vídeo fica onde estava: o quadro da tela é decodificado de novo e sobe
+/// para a textura nova quando ele voltar a aparecer. O que já tinha acabado também fica
+/// (no último quadro, acabado, e o play recomeça do começo como antes), sem baixar de
+/// novo: antes ele era fechado aqui, e o play na volta não achava mais o player.
 pub fn dropTexture() void {
     const p = if (cur) |*pp| pp else return;
-    if (p.ended) return stop();
     if (p.tex) |t| c.SDL_DestroyTexture(t);
     p.tex = null;
-    if (p.have_frame) seek(p, @intFromFloat(p.pos_ms));
+    if (p.have_frame) seek(p, p.frame_pts);
 }
 
 fn seek(p: *Player, ms: i64) void {
@@ -469,6 +471,7 @@ fn update(p: *Player, renderer: ?*c.SDL_Renderer, now_ms: i64) void {
     if (due > 0) {
         const s = &sh.ring[(sh.head + due - 1) % ring_n];
         if (p.tex) |t| _ = c.SDL_UpdateTexture(t, null, s.px.ptr, @intCast(sh.w * 4));
+        p.frame_pts = s.pts_ms;
         texture_changed = true;
         sh.head = (sh.head + due) % ring_n;
         sh.len -= due;
