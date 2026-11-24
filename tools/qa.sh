@@ -74,6 +74,12 @@ QA_SUITE=ctl LARPER_CTL=1 run "controle externo" $bin --qa --theme classico
 # editor num tema claro, em japonês e com a interface em 125%.
 QA_SUITE=imagem run "imagem privada" $bin --qa --theme classico
 QA_SUITE=imagem-tema QA_PREFIX=papel-claro-ja- run "imagem (japonês, 125%)" $bin --qa --theme papel --mode claro --lang ja
+# Vídeo em tela cheia: o botão, a janela em tela cheia do sistema e de volta como estava
+# (F11 antes, maximizada, por fora, bandeja), os controles que somem, o teclado e a
+# decodificação no tamanho da tela; depois num tema claro, em japonês e em 125%. Sem
+# FFmpeg (a CI), só confere que não aparece botão.
+QA_SUITE=video-tela run "vídeo em tela cheia" $bin --qa --theme classico
+QA_SUITE=video-tela-tema QA_PREFIX=papel-claro-ja- run "vídeo em tela cheia (japonês, 125%)" $bin --qa --theme papel --mode claro --lang ja
 # Inspetor (F12): elementos, escolher na tela, comandos, rede, gateway, eventos, fechar.
 QA_SUITE=inspetor run "inspetor" $bin --qa --theme classico
 # Arrastar alguém da call para outro canal de voz (e soltar fora não mover).

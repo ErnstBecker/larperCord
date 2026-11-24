@@ -559,6 +559,9 @@ pub const Action = union(enum) {
     open_settings,
     close_settings,
     toggle_fullscreen,
+    /// A janela entra (ou sai) da tela cheia do sistema pelo vídeo em tela cheia, e
+    /// volta como estava (ui/video.zig, `janela`).
+    video_tela_cheia: bool,
     /// Grava as configurações (uma mudança que não passa pela tela delas).
     save_settings,
     reply: Id,

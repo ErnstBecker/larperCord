@@ -494,6 +494,9 @@ pub const App = struct {
         const logged_in = app.store.ready and !app.login.visible();
         if (!janela.wantsTray(app.st.settings.close_to_tray, logged_in)) return false;
         if (!app.trayShow(true)) return false;
+        // O vídeo em tela cheia sai antes, e a janela volta ao que era ainda à vista (é
+        // guardada assim, e volta da bandeja fora da tela cheia).
+        @import("ui/video.zig").antesDaBandeja(app.win.window);
         _ = c.SDL_HideWindow(app.win.window);
         app.in_tray = true;
         // Sem quadros daqui em diante: o que depende do quadro fica certo agora.
@@ -2503,6 +2506,7 @@ pub const App = struct {
                 const on = app.win.flags() & c.SDL_WINDOW_FULLSCREEN != 0;
                 _ = c.SDL_SetWindowFullscreen(app.win.window, !on);
             },
+            .video_tela_cheia => |on| @import("ui/video.zig").janela(app.win.window, on, now()),
             .open_settings => {
                 st.palette.open = false;
                 st.settings.open = true;
@@ -3557,6 +3561,9 @@ pub const App = struct {
                     // O lugar e o tamanho para a janela voltar igual da bandeja.
                     if (e.type == c.SDL_EVENT_WINDOW_RESIZED or e.type == c.SDL_EVENT_WINDOW_MOVED or e.type == c.SDL_EVENT_WINDOW_MAXIMIZED or
                         e.type == c.SDL_EVENT_WINDOW_RESTORED or e.type == c.SDL_EVENT_WINDOW_ENTER_FULLSCREEN or e.type == c.SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) app.win.remember();
+                    // A tela cheia do vídeo acompanha a da janela (saiu por fora, ele sai junto).
+                    if (e.type == c.SDL_EVENT_WINDOW_ENTER_FULLSCREEN or e.type == c.SDL_EVENT_WINDOW_LEAVE_FULLSCREEN)
+                        @import("ui/video.zig").janelaEvento(e.type == c.SDL_EVENT_WINDOW_ENTER_FULLSCREEN);
                     if (e.type == c.SDL_EVENT_DROP_FILE and app.store.ready and app.st.activeChannel() != null) {
                         // Solta em cima do mascote, uma imagem vira um quadro na mão dele (e vai
                         // para a bandeja do mesmo jeito). O ponto vem em pixels da janela.
@@ -3577,6 +3584,8 @@ pub const App = struct {
                 got = c.SDL_PollEvent(&e);
             }
             if (input) pending = 3;
+            // Saindo da tela cheia do vídeo: a janela que era maximizada volta maximizada.
+            @import("ui/video.zig").janelaTick(app.win.window, now());
             // Na bandeja e sem a janela flutuante: a parte da GPU sai (ver `releaseGpu`). Com
             // ela aberta, fica (ela desenha com o renderizador e as imagens da principal), e
             // sai quando ela fechar.
