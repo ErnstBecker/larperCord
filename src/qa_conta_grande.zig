@@ -115,6 +115,21 @@ fn rolarCima(app: *App) void {
     c.ImGuiIO_AddMouseWheelEvent(io, 0, 25);
 }
 
+fn abrirDesempenho(app: *App) void {
+    app.st.settings.open = true;
+    app.st.settings.page = .desempenho;
+}
+
+fn escala125(app: *App) void {
+    app.st.settings.ui_scale = 1.25;
+}
+fn escala100(app: *App) void {
+    app.st.settings.ui_scale = 1;
+}
+fn escalaAplicada(app: *App) bool {
+    return app.ui_size == 1.25;
+}
+
 /// Desce a página de Configurações até a divisão da RAM (para o print).
 fn rolarPagina(app: *App) void {
     const io = app.io;
@@ -193,14 +208,23 @@ pub const ops = [_]Op{
     ram("15 DMs"),
 
     s("conta grande: Desempenho"),
-    .{ .key = .{ .key = c.ImGuiKey_Comma, .ctrl = true } },
+    // Pela página e não pelo nome na lista: a bateria também roda em outro idioma (--lang).
+    .{ .run = abrirDesempenho },
     .{ .wait = 400 },
-    .{ .click = .{ .mark = "settings:Desempenho" } },
     expectT("a página de Desempenho mostra a conta grande, com as partes da RAM somando o total", desempenhoMostrado, 8000),
     .{ .wait = 2500 },
     .{ .run = rolarPagina },
     .{ .wait = 600 },
     .{ .shot = "conta-grande-desempenho" },
+    // A mesma página com a interface em 125% (e no idioma que a bateria rodar, --lang).
+    .{ .run = escala125 },
+    expectT("a interface vai a 125%", escalaAplicada, 4000),
+    .{ .run = rolarPagina },
+    .{ .wait = 800 },
+    expectT("a 125%, as partes continuam somando o total", desempenhoMostrado, 4000),
+    .{ .shot = "conta-grande-desempenho-125" },
+    .{ .run = escala100 },
+    .{ .wait = 400 },
     .{ .key = .{ .key = c.ImGuiKey_Escape } },
     .{ .wait = 400 },
 
