@@ -8,7 +8,12 @@
 #include <string.h>
 #include <malloc.h>
 
-#if defined(_WIN32)
+#if defined(LARPER_MIMALLOC)
+// Com o mimalloc (zig build -Dmimalloc=true) o tamanho vem dele: no Windows o _msize da DLL
+// do C não conhece os blocos do mimalloc.
+#include "mimalloc.h"
+#define USABLE(p) mi_usable_size(p)
+#elif defined(_WIN32)
 #define USABLE(p) _msize(p)
 #else
 #define USABLE(p) malloc_usable_size(p)
