@@ -159,6 +159,11 @@ pub fn build(b: *std.Build) void {
     const qa = b.option(bool, "qa", "Inclui o robô de QA (--qa); padrão: só no debug") orelse !release;
     const build_options = b.addOptions();
     build_options.addOption(bool, "qa", qa);
+    // O Discord de mentira em 127.0.0.1 (QA_SUITE=rede e conta-grande) só troca o endereço no
+    // debug. -Dqa-rede (com -Dqa) deixa trocar também num build otimizado, para medir a RAM
+    // com o alocador e o código da release (tools/ram_conta_grande.sh). Nunca nas releases.
+    const qa_rede = b.option(bool, "qa-rede", "Com -Dqa num build otimizado: o QA de rede e o da conta grande no Discord de mentira local") orelse false;
+    build_options.addOption(bool, "qa_rede", qa and qa_rede);
     // O TLS do Chrome (src/platform/tls_chrome.c) mexe no OpenSSL do curl: só onde ele é
     // o mesmo que o app liga. O libcurl oficial do Windows traz o dele por dentro.
     const tls_chrome = target.result.os.tag != .windows or single_exe;
@@ -274,6 +279,8 @@ pub fn build(b: *std.Build) void {
     mod.addCSourceFile(.{ .file = b.path("third_party/imgui/imgui_demo.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti", "-DIMGUI_DISABLE_DEMO_WINDOWS" } });
 
     mod.addCSourceFile(.{ .file = b.path("src/ui/font_metrics.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
+    // A memória de cada biblioteca grande (src/platform/mem_contas.zig).
+    mod.addCSourceFile(.{ .file = b.path("src/platform/mem_contas.c"), .flags = &.{ "-std=gnu11", "-O2" } });
     mod.addCSourceFile(.{ .file = b.path("src/inspect/ganchos.cpp"), .flags = &.{ "-std=c++17", "-fno-exceptions", "-fno-rtti" } });
 
     // Decodificador de imagens (PNG/JPEG/GIF) dos anexos; WebP vem da libwebp.
@@ -670,6 +677,7 @@ fn addWeb(b: *std.Build, native_c: *std.Build.Module, themes_mod: *std.Build.Mod
 fn webModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, c_mod: *std.Build.Module, themes_mod: *std.Build.Module, examples_mod: *std.Build.Module) *std.Build.Module {
     const options = b.addOptions();
     options.addOption(bool, "qa", false);
+    options.addOption(bool, "qa_rede", false);
     options.addOption(bool, "tls_chrome", false);
     options.addOption(bool, "single_exe", false);
     options.addOption([]const u8, "version", @import("src/core/version.zig").number);

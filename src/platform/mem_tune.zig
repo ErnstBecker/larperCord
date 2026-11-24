@@ -36,14 +36,20 @@ pub fn giveBack() void {
     _ = c.SetProcessWorkingSetSize(c.GetCurrentProcess(), std.math.maxInt(usize), std.math.maxInt(usize));
 }
 
-pub const Heap = struct { used_kb: u32, free_kb: u32 };
+pub const Heap = struct {
+    used_kb: u32,
+    free_kb: u32,
+    /// Dos que estão em uso, os blocos grandes que são um mmap próprio cada (glibc: a partir
+    /// de 128 KiB, ver `init`): eles aparecem no mapa de memória como anônimos sem nome.
+    mmap_kb: u32 = 0,
+};
 
 /// O que o malloc tem em uso e o que tem livre sem ter devolvido. Também percorre as
 /// arenas: fora da thread da UI, e não em call (ver `App.tick`).
 pub fn heap() ?Heap {
     if (glibc) {
         const m = c.mallinfo2();
-        return .{ .used_kb = @intCast((m.uordblks + m.hblkhd) / 1024), .free_kb = @intCast(m.fordblks / 1024) };
+        return .{ .used_kb = @intCast((m.uordblks + m.hblkhd) / 1024), .free_kb = @intCast(m.fordblks / 1024), .mmap_kb = @intCast(m.hblkhd / 1024) };
     }
     return null;
 }
