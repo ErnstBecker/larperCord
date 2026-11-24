@@ -9,6 +9,7 @@ const i18n = @import("../ui/i18n.zig");
 const kit = @import("kit.zig");
 const cap = @import("captura.zig");
 const mem_use = @import("../core/mem_use.zig");
+const sort = @import("../core/sort.zig");
 const App = @import("../app.zig").App;
 
 /// Uma amostra por quadro feito: o tempo de CPU dele e se foi para a tela.
@@ -120,7 +121,7 @@ fn stats(now_ms: i64) Stats {
         if (now_ms - s.at_ms <= 1000) fps += 1;
     }
     const last = vals[0];
-    std.mem.sortUnstable(u32, vals[0..count], {}, std.sort.asc(u32));
+    sort.stable(u32, vals[0..count], {}, std.sort.asc(u32));
     return .{
         .last = last,
         .avg = @intCast(sum / count),
@@ -143,10 +144,10 @@ pub fn draw(u: *kit.Ui, app: *App, r: kit.Rect) void {
     var db: [24]u8 = undefined;
     const cards = [_]struct { pt: []const u8, en: []const u8, v: []const u8, warn: bool }{
         .{ .pt = "Quadro (último)", .en = "Frame (last)", .v = kit.durText(&b[0], st.last), .warn = st.last > 16_000 },
-        .{ .pt = "Média / p95", .en = "Average / p95", .v = std.fmt.bufPrint(&b[1], "{s} / {s}", .{ kit.durText(&db, st.avg), kit.durText(&b[7], st.p95) }) catch "", .warn = st.p95 > 16_000 },
-        .{ .pt = "Quadros no último segundo", .en = "Frames in the last second", .v = std.fmt.bufPrint(&b[2], "{d}", .{st.fps}) catch "", .warn = false },
-        .{ .pt = "Foram para a tela", .en = "Went to the screen", .v = std.fmt.bufPrint(&b[3], "{d}%", .{st.shown_pct}) catch "", .warn = false },
-        .{ .pt = "CPU do processo", .en = "Process CPU", .v = std.fmt.bufPrint(&b[4], "{d:.1}%", .{cpu_pct}) catch "", .warn = cpu_pct > 25 },
+        .{ .pt = "Média / p95", .en = "Average / p95", .v = kit.bufSay(&b[1], "{s} / {s}", &.{ kit.arg(kit.durText(&db, st.avg)), kit.arg(kit.durText(&b[7], st.p95)) }) orelse "", .warn = st.p95 > 16_000 },
+        .{ .pt = "Quadros no último segundo", .en = "Frames in the last second", .v = kit.bufSay(&b[2], "{d}", &.{ kit.arg(st.fps) }) orelse "", .warn = false },
+        .{ .pt = "Foram para a tela", .en = "Went to the screen", .v = kit.bufSay(&b[3], "{d}%", &.{ kit.arg(st.shown_pct) }) orelse "", .warn = false },
+        .{ .pt = "CPU do processo", .en = "Process CPU", .v = kit.bufSay(&b[4], "{d:.1}%", &.{ kit.arg(cpu_pct) }) orelse "", .warn = cpu_pct > 25 },
         .{ .pt = if (builtin.os.tag == .windows) "RAM (privada)" else "RAM (PSS)", .en = if (builtin.os.tag == .windows) "RAM (private)" else "RAM (PSS)", .v = kit.bytesText(&b[5], @as(usize, app.stats.ram_kb) * 1024), .warn = false },
     };
     const cw: f32 = @max(130, (w - 10) / 3);
@@ -185,7 +186,7 @@ pub fn draw(u: *kit.Ui, app: *App, r: kit.Rect) void {
                 return ff.scopes.items[a].us > ff.scopes.items[bb].us;
             }
         };
-        std.mem.sort(usize, idx[0..n], f, S.gt);
+        sort.stable(usize, idx[0..n], f, S.gt);
         const top: f32 = if (n > 0) @floatFromInt(f.scopes.items[idx[0]].us) else 1;
         for (idx[0..@min(n, 16)]) |si| {
             const s = &f.scopes.items[si];
@@ -211,19 +212,19 @@ pub fn draw(u: *kit.Ui, app: *App, r: kit.Rect) void {
     var open_m = true;
     if (kit.section(u, x - 10, &y, w + 20, i18n.tr("GPU e memória", "GPU and memory"), &open_m)) {
         var vb: [64]u8 = undefined;
-        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Listas de desenho", "Draw lists"), std.fmt.bufPrint(&vb, "{d}", .{gpu.lists}) catch "", kit.pal.num);
-        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Comandos / trocas de textura", "Commands / texture switches"), std.fmt.bufPrint(&vb, "{d} / {d}", .{ gpu.cmds, gpu.tex }) catch "", kit.pal.num);
-        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Vértices / índices", "Vertices / indices"), std.fmt.bufPrint(&vb, "{d} / {d}", .{ gpu.vtx, gpu.idx }) catch "", kit.pal.num);
+        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Listas de desenho", "Draw lists"), kit.bufSay(&vb, "{d}", &.{ kit.arg(gpu.lists) }) orelse "", kit.pal.num);
+        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Comandos / trocas de textura", "Commands / texture switches"), kit.bufSay(&vb, "{d} / {d}", &.{ kit.arg(gpu.cmds), kit.arg(gpu.tex) }) orelse "", kit.pal.num);
+        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Vértices / índices", "Vertices / indices"), kit.bufSay(&vb, "{d} / {d}", &.{ kit.arg(gpu.vtx), kit.arg(gpu.idx) }) orelse "", kit.pal.num);
         var b1: [24]u8 = undefined;
-        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Imagens no cache", "Images in cache"), std.fmt.bufPrint(&vb, "{d} · {s}", .{ app.images.readyCount(), kit.bytesText(&b1, app.images.bytes) }) catch "", kit.pal.num);
+        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Imagens no cache", "Images in cache"), kit.bufSay(&vb, "{d} · {s}", &.{ kit.arg(app.images.readyCount()), kit.arg(kit.bytesText(&b1, app.images.bytes)) }) orelse "", kit.pal.num);
         // Varrer a conta custa: no máximo a cada 2 s.
         if (now_ms - mu_ms >= 2000 or mu_ms == 0) {
             mu = mem_use.of(&app.store);
             mu_ms = now_ms;
         }
-        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Mensagens na memória", "Messages in memory"), std.fmt.bufPrint(&vb, "{d} · ~{s}", .{ mu.n_messages, kit.bytesText(&b1, mu.messages) }) catch "", kit.pal.num);
-        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Pessoas", "People"), std.fmt.bufPrint(&vb, "{d} · ~{s}", .{ mu.n_people, kit.bytesText(&b1, mu.people) }) catch "", kit.pal.num);
-        if (app.stats.heap_used_kb > 0) kit.kv(u, x - 10, &y, w + 10, i18n.tr("Alocada / livre não devolvida", "Allocated / free not returned"), std.fmt.bufPrint(&vb, "{s} / {s}", .{ kit.bytesText(&b1, @as(usize, app.stats.heap_used_kb) * 1024), kit.bytesText(&b[6], @as(usize, app.stats.heap_free_kb) * 1024) }) catch "", kit.pal.num);
+        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Mensagens na memória", "Messages in memory"), kit.bufSay(&vb, "{d} · ~{s}", &.{ kit.arg(mu.n_messages), kit.arg(kit.bytesText(&b1, mu.messages)) }) orelse "", kit.pal.num);
+        kit.kv(u, x - 10, &y, w + 10, i18n.tr("Pessoas", "People"), kit.bufSay(&vb, "{d} · ~{s}", &.{ kit.arg(mu.n_people), kit.arg(kit.bytesText(&b1, mu.people)) }) orelse "", kit.pal.num);
+        if (app.stats.heap_used_kb > 0) kit.kv(u, x - 10, &y, w + 10, i18n.tr("Alocada / livre não devolvida", "Allocated / free not returned"), kit.bufSay(&vb, "{s} / {s}", &.{ kit.arg(kit.bytesText(&b1, @as(usize, app.stats.heap_used_kb) * 1024)), kit.arg(kit.bytesText(&b[6], @as(usize, app.stats.heap_free_kb) * 1024)) }) orelse "", kit.pal.num);
         y += 8;
     }
     kit.endPane(u, r, y, parent);
@@ -249,7 +250,7 @@ fn graph(u: *kit.Ui, x: f32, y: f32, w: f32, h: f32, max_us: u32) f32 {
     if (hovered) |s| {
         var tb: [64]u8 = undefined;
         var db: [24]u8 = undefined;
-        kit.tooltip(u, std.fmt.bufPrint(&tb, "{s}{s}", .{ kit.durText(&db, s.us), if (s.shown) "" else i18n.tr("  (igual, não desenhado)", "  (same, not drawn)") }) catch "");
+        kit.tooltip(u, kit.bufSay(&tb, "{s}{s}", &.{ kit.arg(kit.durText(&db, s.us)), kit.arg(if (s.shown) "" else i18n.tr("  (igual, não desenhado)", "  (same, not drawn)")) }) orelse "");
     }
     return y + h;
 }
@@ -257,14 +258,14 @@ fn graph(u: *kit.Ui, x: f32, y: f32, w: f32, h: f32, max_us: u32) f32 {
 /// Os números em texto, para o comando `perf`.
 pub fn texto(app: *App, w: *std.Io.Writer) @import("comandos.zig").Fim {
     const st = stats(@intCast(c.SDL_GetTicks()));
-    w.print("quadro: último {d} µs, média {d} µs, p95 {d} µs, máximo {d} µs ({d} amostras)\n", .{ st.last, st.avg, st.p95, st.max, count }) catch {};
-    w.print("quadros no último segundo: {d}, foram para a tela: {d}%\n", .{ st.fps, st.shown_pct }) catch {};
-    w.print("cpu do processo: {d:.1}%\n", .{cpu_pct}) catch {};
-    w.print("ram: {d} KB, heap alocada {d} KB, livre {d} KB\n", .{ app.stats.ram_kb, app.stats.heap_used_kb, app.stats.heap_free_kb }) catch {};
-    w.print("gpu: {d} listas, {d} comandos, {d} trocas de textura, {d} vértices\n", .{ gpu.lists, gpu.cmds, gpu.tex, gpu.vtx }) catch {};
-    w.print("imagens: {d} ({d} KB)\n", .{ app.images.readyCount(), app.images.bytes / 1024 }) catch {};
+    kit.say(w, "quadro: último {d} µs, média {d} µs, p95 {d} µs, máximo {d} µs ({d} amostras)\n", &.{ kit.arg(st.last), kit.arg(st.avg), kit.arg(st.p95), kit.arg(st.max), kit.arg(count) }) catch {};
+    kit.say(w, "quadros no último segundo: {d}, foram para a tela: {d}%\n", &.{ kit.arg(st.fps), kit.arg(st.shown_pct) }) catch {};
+    kit.say(w, "cpu do processo: {d:.1}%\n", &.{ kit.arg(cpu_pct) }) catch {};
+    kit.say(w, "ram: {d} KB, heap alocada {d} KB, livre {d} KB\n", &.{ kit.arg(app.stats.ram_kb), kit.arg(app.stats.heap_used_kb), kit.arg(app.stats.heap_free_kb) }) catch {};
+    kit.say(w, "gpu: {d} listas, {d} comandos, {d} trocas de textura, {d} vértices\n", &.{ kit.arg(gpu.lists), kit.arg(gpu.cmds), kit.arg(gpu.tex), kit.arg(gpu.vtx) }) catch {};
+    kit.say(w, "imagens: {d} ({d} KB)\n", &.{ kit.arg(app.images.readyCount()), kit.arg(app.images.bytes / 1024) }) catch {};
     if (cap.last()) |f| {
-        for (f.scopes.items) |s| if (s.us >= 50) w.print("componente {s}: {d} µs\n", .{ s.name, s.us }) catch {};
+        for (f.scopes.items) |s| if (s.us >= 50) kit.say(w, "componente {s}: {d} µs\n", &.{ kit.arg(s.name), kit.arg(s.us) }) catch {};
     }
     if (count == 0) w.writeAll("(abra o Inspetor para as amostras de quadro)\n") catch {};
     return .pronto;

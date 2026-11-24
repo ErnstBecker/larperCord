@@ -180,7 +180,7 @@ fn list(u: *kit.Ui, r: kit.Rect, narrow: bool) void {
         if (sel) kit.rect(u, rr, kit.pal.sel, 0) else if (isError(row)) kit.rect(u, rr, kit.pal.err_bg.alpha(0.6), 0) else if (over) kit.rect(u, rr, kit.pal.hover, 0);
         const ty = u.midCode(y, rh);
         var sb: [16]u8 = undefined;
-        const st = if (row.pending) "…" else if (row.failed) i18n.tr("falhou", "failed") else std.fmt.bufPrint(&sb, "{d}", .{row.status}) catch "";
+        const st = if (row.pending) "…" else if (row.failed) i18n.tr("falhou", "failed") else kit.bufSay(&sb, "{d}", &.{ kit.arg(row.status) }) orelse "";
         _ = u.code(cols.status, ty, statusColor(row), st);
         _ = u.code(cols.method, ty, kit.pal.dim, std.mem.sliceTo(&row.method, 0));
         const parts = split2(row.url);
@@ -190,7 +190,7 @@ fn list(u: *kit.Ui, r: kit.Rect, narrow: bool) void {
         run.put(kit.pal.faint, parts.host);
         if (row.waited_ms > 0) {
             run.put(kit.pal.faint, "  ");
-            run.print(kit.pal.warn, "⏳ {d} ms", .{row.waited_ms});
+            run.say(kit.pal.warn, "⏳ {d} ms", &.{ kit.arg(row.waited_ms) });
         }
         if (!narrow) {
             var bb: [24]u8 = undefined;
@@ -317,23 +317,23 @@ fn headers(u: *kit.Ui, n: *const reg.Net, r: kit.Rect) void {
         kit.kv(u, x, &y, w, "URL", n.url, kit.pal.text);
         kit.kv(u, x, &y, w, i18n.tr("Método", "Method"), n.methodStr(), kit.pal.text);
         var sb: [64]u8 = undefined;
-        const st = if (n.pending) i18n.tr("esperando", "pending") else if (n.failed) i18n.tr("falhou", "failed") else std.fmt.bufPrint(&sb, "{d}", .{n.status}) catch "";
+        const st = if (n.pending) i18n.tr("esperando", "pending") else if (n.failed) i18n.tr("falhou", "failed") else kit.bufSay(&sb, "{d}", &.{ kit.arg(n.status) }) orelse "";
         kit.kv(u, x, &y, w, "Status", st, if (n.failed or n.status >= 400) kit.pal.err else kit.pal.ok);
         if (n.noteStr().len > 0) kit.kv(u, x, &y, w, i18n.tr("Motivo", "Reason"), n.noteStr(), kit.pal.err);
         if (n.http > 0) {
             var hb: [16]u8 = undefined;
-            kit.kv(u, x, &y, w, "HTTP", std.fmt.bufPrint(&hb, "{d}.{d}", .{ n.http / 10, n.http % 10 }) catch "", kit.pal.dim);
+            kit.kv(u, x, &y, w, "HTTP", kit.bufSay(&hb, "{d}.{d}", &.{ kit.arg(n.http / 10), kit.arg(n.http % 10) }) orelse "", kit.pal.dim);
         }
         if (n.contentType().len > 0) kit.kv(u, x, &y, w, i18n.tr("Tipo", "Type"), n.contentType(), kit.pal.dim);
         var tb: [24]u8 = undefined;
         kit.kv(u, x, &y, w, i18n.tr("Começou", "Started"), kit.clock(&tb, n.started_ms), kit.pal.dim);
         if (n.attempt > 0) {
             var ab: [24]u8 = undefined;
-            kit.kv(u, x, &y, w, i18n.tr("Tentativa", "Attempt"), std.fmt.bufPrint(&ab, "{d}", .{n.attempt + 1}) catch "", kit.pal.warn);
+            kit.kv(u, x, &y, w, i18n.tr("Tentativa", "Attempt"), kit.bufSay(&ab, "{d}", &.{ kit.arg(n.attempt + 1) }) orelse "", kit.pal.warn);
         }
         if (n.waited_ms > 0) {
             var wb: [32]u8 = undefined;
-            kit.kv(u, x, &y, w, i18n.tr("Esperou o rate limit", "Waited on the rate limit"), std.fmt.bufPrint(&wb, "{d} ms", .{n.waited_ms}) catch "", kit.pal.warn);
+            kit.kv(u, x, &y, w, i18n.tr("Esperou o rate limit", "Waited on the rate limit"), kit.bufSay(&wb, "{d} ms", &.{ kit.arg(n.waited_ms) }) orelse "", kit.pal.warn);
         }
         kit.kv(u, x, &y, w, i18n.tr("Quem pediu", "Requested by"), n.threadStr(), kit.pal.dim);
         y += 6;
@@ -426,7 +426,7 @@ fn copyCurl(n: *const reg.Net) void {
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
     const w = &out.writer;
-    w.print("curl -X {s} '{s}'", .{ n.methodStr(), n.url }) catch return;
+    kit.say(w, "curl -X {s} '{s}'", &.{ kit.arg(n.methodStr()), kit.arg(n.url) }) catch return;
     var it = std.mem.splitScalar(u8, n.req_headers, '\n');
     while (it.next()) |line| {
         if (line.len == 0) continue;
@@ -434,9 +434,9 @@ fn copyCurl(n: *const reg.Net) void {
             w.writeAll(" \\\n  -H \"Authorization: $LARPER_TOKEN\"") catch return;
             continue;
         }
-        w.print(" \\\n  -H '{s}'", .{line}) catch return;
+        kit.say(w, " \\\n  -H '{s}'", &.{ kit.arg(line) }) catch return;
     }
-    if (n.req_body.len > 0 and n.req_body[0] != '(') w.print(" \\\n  --data-raw '{s}'", .{n.req_body}) catch return;
+    if (n.req_body.len > 0 and n.req_body[0] != '(') kit.say(w, " \\\n  --data-raw '{s}'", &.{ kit.arg(n.req_body) }) catch return;
     kit.copyLong(out.written());
 }
 

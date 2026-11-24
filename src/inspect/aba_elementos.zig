@@ -291,16 +291,16 @@ fn scopeRow(run: *kit.Run, f: *const cap.Frame, si: usize, n_els: usize) void {
         }
     }
     run.put(kit.pal.tag, ">");
-    if (s.line > 0) run.print(kit.pal.faint, "  :{d}", .{s.line});
-    run.print(kit.pal.faint, "  {d:.0}×{d:.0}", .{ s.rect.w, s.rect.h });
-    if (n_els > 0) run.print(kit.pal.faint, "  ({d})", .{n_els});
-    if (s.us > 0) run.print(kit.pal.faint, "  {d} µs", .{s.us});
+    if (s.line > 0) run.say(kit.pal.faint, "  :{d}", &.{ kit.arg(s.line) });
+    run.say(kit.pal.faint, "  {d:.0}×{d:.0}", &.{ kit.arg(s.rect.w), kit.arg(s.rect.h) });
+    if (n_els > 0) run.say(kit.pal.faint, "  ({d})", &.{ kit.arg(n_els) });
+    if (s.us > 0) run.say(kit.pal.faint, "  {d} µs", &.{ kit.arg(s.us) });
 }
 
 fn valueText(buf: []u8, v: kdl.Value) []const u8 {
     return switch (v) {
-        .string => |s| std.fmt.bufPrint(buf, "\"{s}\"", .{s[0..@min(s.len, 40)]}) catch "",
-        .number => |n| std.fmt.bufPrint(buf, "{d}", .{n}) catch "",
+        .string => |s| kit.bufSay(buf, "\"{s}\"", &.{ kit.arg(s[0..@min(s.len, 40)]) }) orelse "",
+        .number => |n| kit.bufSay(buf, "{d}", &.{ kit.arg(n) }) orelse "",
         .boolean => |b| if (b) "#true" else "#false",
         .null => "null",
     };
@@ -329,7 +329,7 @@ fn elRow(run: *kit.Run, f: *const cap.Frame, i: usize) void {
             run.put(kit.pal.attr, " src");
             run.put(kit.pal.dim, "=");
             run.put(kit.pal.value, shortUrl(f.str(e.str)));
-            if (e.tex_w > 0) run.print(kit.pal.faint, " {d}×{d}", .{ e.tex_w, e.tex_h });
+            if (e.tex_w > 0) run.say(kit.pal.faint, " {d}×{d}", &.{ kit.arg(e.tex_w), kit.arg(e.tex_h) });
             run.put(kit.pal.tag, ">");
         },
         .fill, .border => {
@@ -369,7 +369,7 @@ fn attrNum(run: *kit.Run, key: []const u8, v: f32) void {
     run.put(kit.pal.attr, " ");
     run.put(kit.pal.attr, key);
     run.put(kit.pal.dim, "=");
-    run.print(kit.pal.num, "{d:.0}", .{v});
+    run.say(kit.pal.num, "{d:.0}", &.{ kit.arg(v) });
 }
 
 fn attrColor(run: *kit.Run, th: *const theme_mod.Theme, key: []const u8, color: u32) void {
@@ -403,17 +403,17 @@ pub fn describe(f: *const cap.Frame, i: usize, buf: []u8) []const u8 {
     const sc = if (f.scopeOf(e)) |s| s.name else "";
     const s = f.str(e.str);
     return switch (e.kind) {
-        .text => std.fmt.bufPrint(buf, "text.{s} \"{s}\"", .{ sc, d.utf8Prefix(s, 60) }) catch "text",
-        .image => std.fmt.bufPrint(buf, "img.{s} {s}", .{ sc, shortUrl(s) }) catch "img",
-        .fill => std.fmt.bufPrint(buf, "box.{s}", .{sc}) catch "box",
-        .border => std.fmt.bufPrint(buf, "border.{s}", .{sc}) catch "border",
-        .window => std.fmt.bufPrint(buf, "window {s}", .{s}) catch "window",
+        .text => kit.bufSay(buf, "text.{s} \"{s}\"", &.{ kit.arg(sc), kit.arg(d.utf8Prefix(s, 60)) }) orelse "text",
+        .image => kit.bufSay(buf, "img.{s} {s}", &.{ kit.arg(sc), kit.arg(shortUrl(s)) }) orelse "img",
+        .fill => kit.bufSay(buf, "box.{s}", &.{ kit.arg(sc) }) orelse "box",
+        .border => kit.bufSay(buf, "border.{s}", &.{ kit.arg(sc) }) orelse "border",
+        .window => kit.bufSay(buf, "window {s}", &.{ kit.arg(s) }) orelse "window",
         .item => blk: {
             var tb: [80]u8 = undefined;
             const inside = cap.textsIn(f, e.rect, e.layer, &tb);
-            if (f.markFor(e.rect)) |m| break :blk std.fmt.bufPrint(buf, "button.{s} \"{s}\" [{s}]", .{ sc, d.utf8Prefix(inside, 50), m }) catch "button";
-            if (e.hit != null) break :blk std.fmt.bufPrint(buf, "button.{s} {s}", .{ sc, inside }) catch "button";
-            break :blk std.fmt.bufPrint(buf, "item.{s} {s}", .{ sc, if (s.len > 0) s else inside }) catch "item";
+            if (f.markFor(e.rect)) |m| break :blk kit.bufSay(buf, "button.{s} \"{s}\" [{s}]", &.{ kit.arg(sc), kit.arg(d.utf8Prefix(inside, 50)), kit.arg(m) }) orelse "button";
+            if (e.hit != null) break :blk kit.bufSay(buf, "button.{s} {s}", &.{ kit.arg(sc), kit.arg(inside) }) orelse "button";
+            break :blk kit.bufSay(buf, "item.{s} {s}", &.{ kit.arg(sc), kit.arg(if (s.len > 0) s else inside) }) orelse "item";
         },
     };
 }
@@ -435,13 +435,14 @@ pub fn tokenName(th: *const theme_mod.Theme, color: u32) []const u8 {
     const a = color >> 24;
     var near: []const u8 = "";
     var near_d: u32 = std.math.maxInt(u32);
-    inline for (@typeInfo(theme_mod.Token).@"enum".field_names) |name| {
-        const tc = th.c(@field(theme_mod.Token, name)).u();
+    for (comptime std.enums.values(theme_mod.Token)) |tok| {
+        const name = @tagName(tok);
+        const tc = th.c(tok).u();
         if (tc & 0x00FFFFFF == rgb) {
             const ta = tc >> 24;
             if (ta == a) return name;
             const pct = a * 100 / @max(ta, 1);
-            return std.fmt.bufPrint(&S.buf, "{s} {d}%", .{ name, pct }) catch name;
+            return kit.bufSay(&S.buf, "{s} {d}%", &.{ kit.arg(name), kit.arg(pct) }) orelse name;
         }
         const dd = rgbDist(tc, color);
         if (dd < near_d) {
@@ -450,7 +451,7 @@ pub fn tokenName(th: *const theme_mod.Theme, color: u32) []const u8 {
         }
     }
     // Não é cor do tema, mas é quase (uma mistura, um tom acima): o nome da mais perto.
-    if (near_d <= 30) return std.fmt.bufPrint(&S.buf, "≈ {s}", .{near}) catch near;
+    if (near_d <= 30) return kit.bufSay(&S.buf, "≈ {s}", &.{ kit.arg(near) }) orelse near;
     return "";
 }
 
@@ -472,10 +473,10 @@ pub fn fontName(ctx: *const d.Ctx, font: usize) []const u8 {
     const weights = [_][]const u8{ "regular", "medium", "semibold", "bold", "italic" };
     const fams = [_]*const d.Family{ ctx.ui, ctx.mono };
     for (fams) |fam| for (fam.faces, 0..) |face, w| if (@intFromPtr(face) == font) {
-        return std.fmt.bufPrint(&S.buf, "{s} {s}", .{ fam.name, weights[w] }) catch fam.name;
+        return kit.bufSay(&S.buf, "{s} {s}", &.{ kit.arg(fam.name), kit.arg(weights[w]) }) orelse fam.name;
     };
     for (ctx.fonts.families.items) |fam| for (fam.faces, 0..) |face, w| if (@intFromPtr(face) == font) {
-        return std.fmt.bufPrint(&S.buf, "{s} {s}", .{ fam.name, weights[w] }) catch fam.name;
+        return kit.bufSay(&S.buf, "{s} {s}", &.{ kit.arg(fam.name), kit.arg(weights[w]) }) orelse fam.name;
     };
     return "?";
 }
@@ -490,7 +491,7 @@ pub fn themeFile() []const u8 {
     if (m.current >= m.entries.items.len) return "";
     const e = m.entries.items[m.current];
     if (e.path) |p| return std.fs.path.basename(p);
-    return std.fmt.bufPrint(&S.buf, "{s}.kdl", .{e.name}) catch e.name;
+    return kit.bufSay(&S.buf, "{s}.kdl", &.{ kit.arg(e.name) }) orelse e.name;
 }
 
 fn themePath() ?[:0]const u8 {
@@ -532,7 +533,7 @@ fn details(u: *kit.Ui, f: *const cap.Frame, r: kit.Rect) void {
         y += 26;
         var pb: [96]u8 = undefined;
         const vis = cap.overlap(e.rect, e.clip);
-        const pos = std.fmt.bufPrint(&pb, "x {d:.0}  y {d:.0}  ·  {d:.0} × {d:.0}{s}", .{ e.rect.x, e.rect.y, e.rect.w, e.rect.h, if (vis.w * vis.h < e.rect.w * e.rect.h - 1) i18n.tr("  ·  parte recortada", "  ·  partly clipped") else "" }) catch "";
+        const pos = kit.bufSay(&pb, "x {d:.0}  y {d:.0}  ·  {d:.0} × {d:.0}{s}", &.{ kit.arg(e.rect.x), kit.arg(e.rect.y), kit.arg(e.rect.w), kit.arg(e.rect.h), kit.arg(if (vis.w * vis.h < e.rect.w * e.rect.h - 1) i18n.tr("  ·  parte recortada", "  ·  partly clipped") else "") }) orelse "";
         _ = u.clipCode(x + 10, y, kit.pal.dim, pos, w - 10);
         y += 22;
         // Ações.
@@ -574,20 +575,20 @@ fn details(u: *kit.Ui, f: *const cap.Frame, r: kit.Rect) void {
                 if (e.kind == .text) {
                     kit.kv(u, x, &y, w, i18n.tr("Fonte", "Font"), fontName(u.ctx, e.font), kit.pal.text);
                     var sb: [24]u8 = undefined;
-                    kit.kv(u, x, &y, w, i18n.tr("Tamanho", "Size"), std.fmt.bufPrint(&sb, "{d:.0} px", .{e.size}) catch "", kit.pal.num);
+                    kit.kv(u, x, &y, w, i18n.tr("Tamanho", "Size"), kit.bufSay(&sb, "{d:.0} px", &.{ kit.arg(e.size) }) orelse "", kit.pal.num);
                     const bg = fundo(f, i);
                     colorRow(u, th, x, &y, w, i18n.tr("Fundo embaixo", "Background below"), bg);
                     contrastRow(u, x, &y, w, kit.fromU32(e.color).contrast(kit.fromU32(bg)), e.size);
                     kit.kv(u, x, &y, w, i18n.tr("Texto", "Text"), f.str(e.str), kit.pal.str);
                 } else if (e.size > 0) {
                     var rb: [24]u8 = undefined;
-                    kit.kv(u, x, &y, w, i18n.tr("Cantos", "Corners"), std.fmt.bufPrint(&rb, "{d:.1} px", .{e.size}) catch "", kit.pal.num);
+                    kit.kv(u, x, &y, w, i18n.tr("Cantos", "Corners"), kit.bufSay(&rb, "{d:.1} px", &.{ kit.arg(e.size) }) orelse "", kit.pal.num);
                 }
             },
             .image => {
                 kit.kv(u, x, &y, w, "URL", f.str(e.str), kit.pal.str);
                 var tb: [32]u8 = undefined;
-                kit.kv(u, x, &y, w, i18n.tr("Textura", "Texture"), if (e.tex_w > 0) std.fmt.bufPrint(&tb, "{d} × {d}", .{ e.tex_w, e.tex_h }) catch "" else i18n.tr("carregando", "loading"), kit.pal.num);
+                kit.kv(u, x, &y, w, i18n.tr("Textura", "Texture"), if (e.tex_w > 0) kit.bufSay(&tb, "{d} × {d}", &.{ kit.arg(e.tex_w), kit.arg(e.tex_h) }) orelse "" else i18n.tr("carregando", "loading"), kit.pal.num);
             },
             .item, .window => {
                 colorRow(u, th, x, &y, w, i18n.tr("Fundo embaixo", "Background below"), fundo(f, i));
@@ -600,12 +601,12 @@ fn details(u: *kit.Ui, f: *const cap.Frame, r: kit.Rect) void {
     if (e.kind == .item or e.kind == .window) {
         if (kit.section(u, x, &y, w + 10, i18n.tr("Interação", "Interaction"), &sec_item)) {
             var ib: [24]u8 = undefined;
-            kit.kv(u, x, &y, w, "ID", std.fmt.bufPrint(&ib, "0x{X:0>8}", .{e.id}) catch "", kit.pal.num);
+            kit.kv(u, x, &y, w, "ID", kit.bufSay(&ib, "0x{X:0>8}", &.{ kit.arg(e.id) }) orelse "", kit.pal.num);
             if (f.str(e.str).len > 0) kit.kv(u, x, &y, w, i18n.tr("Rótulo", "Label"), f.str(e.str), kit.pal.str);
             if (f.markFor(e.rect)) |m| kit.kv(u, x, &y, w, i18n.tr("Marca do QA", "QA mark"), m, kit.pal.value);
             if (e.hit) |h| {
                 var hb: [64]u8 = undefined;
-                kit.kv(u, x, &y, w, i18n.tr("Área clicável", "Hit area"), std.fmt.bufPrint(&hb, "id {d}{s}{s}{s}", .{ h.local, if (h.hovered) " · hover" else "", if (h.held) " · held" else "", if (h.clicked) " · clicked" else "" }) catch "", kit.pal.text);
+                kit.kv(u, x, &y, w, i18n.tr("Área clicável", "Hit area"), kit.bufSay(&hb, "id {d}{s}{s}{s}", &.{ kit.arg(h.local), kit.arg(if (h.hovered) " · hover" else ""), kit.arg(if (h.held) " · held" else ""), kit.arg(if (h.clicked) " · clicked" else "") }) orelse "", kit.pal.text);
             }
             var fb: [160]u8 = undefined;
             kit.kv(u, x, &y, w, i18n.tr("Estado", "Status"), statusText(&fb, e.status, e.id == f.active_id, e.id == f.hovered_id), kit.pal.text);
@@ -660,7 +661,7 @@ fn layerText(f: *const cap.Frame, layer: u16) []const u8 {
         var buf: [96]u8 = undefined;
     };
     const name = f.layerName(layer);
-    return std.fmt.bufPrint(&S.buf, "{d} {s}", .{ layer, if (name.len > 0) name else "-" }) catch "";
+    return kit.bufSay(&S.buf, "{d} {s}", &.{ kit.arg(layer), kit.arg(if (name.len > 0) name else "-") }) orelse "";
 }
 
 fn scopeDetails(u: *kit.Ui, f: *const cap.Frame, si: usize, x: f32, y: *f32, w: f32) void {
@@ -676,13 +677,13 @@ fn themeRows(u: *kit.Ui, f: *const cap.Frame, si: usize, s: *const cap.Scope, x:
     kit.kv(u, x, y, w, i18n.tr("Pedaço", "Piece"), s.name, kit.pal.tag);
     if (s.line > 0) {
         var lb: [160]u8 = undefined;
-        kit.kv(u, x, y, w, i18n.tr("Arquivo", "File"), std.fmt.bufPrint(&lb, "{s}:{d}:{d}", .{ themeFile(), s.line, s.col }) catch "", kit.pal.hl_scope);
+        kit.kv(u, x, y, w, i18n.tr("Arquivo", "File"), kit.bufSay(&lb, "{s}:{d}:{d}", &.{ kit.arg(themeFile()), kit.arg(s.line), kit.arg(s.col) }) orelse "", kit.pal.hl_scope);
     } else kit.kv(u, x, y, w, i18n.tr("Origem", "Origin"), i18n.tr("sobreposição do app (não vem do tema)", "app overlay (not from the theme)"), kit.pal.dim);
     var sb: [64]u8 = undefined;
-    kit.kv(u, x, y, w, i18n.tr("Retângulo", "Rect"), std.fmt.bufPrint(&sb, "{d:.0}, {d:.0}  {d:.0} × {d:.0}", .{ s.rect.x, s.rect.y, s.rect.w, s.rect.h }) catch "", kit.pal.num);
+    kit.kv(u, x, y, w, i18n.tr("Retângulo", "Rect"), kit.bufSay(&sb, "{d:.0}, {d:.0}  {d:.0} × {d:.0}", &.{ kit.arg(s.rect.x), kit.arg(s.rect.y), kit.arg(s.rect.w), kit.arg(s.rect.h) }) orelse "", kit.pal.num);
     if (s.us > 0) {
         var ub: [32]u8 = undefined;
-        kit.kv(u, x, y, w, i18n.tr("Custo neste quadro", "Cost this frame"), std.fmt.bufPrint(&ub, "{d} µs", .{s.us}) catch "", kit.pal.num);
+        kit.kv(u, x, y, w, i18n.tr("Custo neste quadro", "Cost this frame"), kit.bufSay(&ub, "{d} µs", &.{ kit.arg(s.us) }) orelse "", kit.pal.num);
     }
     if (nodeOf(f, s)) |n| {
         for (n.props) |p| {
@@ -702,7 +703,7 @@ fn themeRows(u: *kit.Ui, f: *const cap.Frame, si: usize, s: *const cap.Scope, x:
         const b = kit.button(u, x + 12, y.*, 22, i18n.tr("Abrir o arquivo do tema", "Open the theme file"), .download);
         if (b.clicked) {
             var ub: [700]u8 = undefined;
-            const url = std.fmt.bufPrintSentinel(&ub, "file://{s}{s}", .{ if (p.len > 0 and p[0] != '/') "/" else "", p }, 0) catch return;
+            const url = kit.bufSayZ(&ub, "file://{s}{s}", &.{ kit.arg(if (p.len > 0 and p[0] != '/') "/" else ""), kit.arg(p) }) orelse return;
             _ = c.SDL_OpenURL(url.ptr);
         }
         y.* += 28;
@@ -717,7 +718,7 @@ fn colorRow(u: *kit.Ui, th: *const theme_mod.Theme, x: f32, y: *f32, w: f32, lab
     var hx: [12]u8 = undefined;
     var vb: [64]u8 = undefined;
     const tok = tokenName(th, color);
-    const v = if (tok.len > 0) std.fmt.bufPrint(&vb, "{s}  {s}", .{ kit.hexOf(&hx, color), tok }) catch "" else kit.hexOf(&hx, color);
+    const v = if (tok.len > 0) kit.bufSay(&vb, "{s}  {s}", &.{ kit.arg(kit.hexOf(&hx, color)), kit.arg(tok) }) orelse "" else kit.hexOf(&hx, color);
     const kw: f32 = @min(150, w * 0.38);
     kit.swatch(u, .{ .x = x + kw - 16, .y = y.* + 4, .w = 11, .h = 11 }, kit.fromU32(color));
     kit.kv(u, x, y, w, label, v, kit.pal.value);
@@ -728,7 +729,7 @@ fn contrastRow(u: *kit.Ui, x: f32, y: *f32, w: f32, ratio: f32, size: f32) void 
     const need: f32 = if (size >= 18) 3 else 4.5;
     var b: [64]u8 = undefined;
     const verdict = if (ratio >= need + 2.5) "AAA" else if (ratio >= need) "AA" else i18n.tr("abaixo do AA", "below AA");
-    const s = std.fmt.bufPrint(&b, "{d:.2} : 1   {s}", .{ ratio, verdict }) catch "";
+    const s = kit.bufSay(&b, "{d:.2} : 1   {s}", &.{ kit.arg(ratio), kit.arg(verdict) }) orelse "";
     kit.kv(u, x, y, w, i18n.tr("Contraste", "Contrast"), s, if (ratio >= need) kit.pal.ok else kit.pal.err);
 }
 

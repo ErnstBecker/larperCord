@@ -202,14 +202,14 @@ fn jstr(w: *std.Io.Writer, s: []const u8) void {
 pub fn elementJson(w: *std.Io.Writer, f: *const cap.Frame, i: usize) void {
     const e = &f.els.items[i];
     const app = ui.app_ptr;
-    w.print("{{\"index\":{d},\"kind\":\"{s}\",\"rect\":[{d:.1},{d:.1},{d:.1},{d:.1}],\"visible\":{},\"layer\":{d}", .{ i, @tagName(e.kind), e.rect.x, e.rect.y, e.rect.w, e.rect.h, cap.visible(e), e.layer }) catch return;
+    kit.say(w, "{{\"index\":{d},\"kind\":\"{s}\",\"rect\":[{d:.1},{d:.1},{d:.1},{d:.1}],\"visible\":{},\"layer\":{d}", &.{ kit.arg(i), kit.arg(@tagName(e.kind)), kit.arg(e.rect.x), kit.arg(e.rect.y), kit.arg(e.rect.w), kit.arg(e.rect.h), kit.arg(cap.visible(e)), kit.arg(e.layer) }) catch return;
     if (f.scopeOf(e)) |s| {
         w.writeAll(",\"scope\":") catch {};
         jstr(w, s.name);
         if (s.line > 0) {
             var lb: [160]u8 = undefined;
             w.writeAll(",\"theme\":") catch {};
-            jstr(w, std.fmt.bufPrint(&lb, "{s}:{d}:{d}", .{ @import("aba_elementos.zig").themeFile(), s.line, s.col }) catch "");
+            jstr(w, kit.bufSay(&lb, "{s}:{d}:{d}", &.{ kit.arg(@import("aba_elementos.zig").themeFile()), kit.arg(s.line), kit.arg(s.col) }) orelse "");
         }
     }
     const s = f.str(e.str);
@@ -234,13 +234,13 @@ pub fn elementJson(w: *std.Io.Writer, f: *const cap.Frame, i: usize) void {
         }
     }
     if (e.kind == .text) {
-        w.print(",\"size\":{d:.0}", .{e.size}) catch {};
-        w.print(",\"contrast\":{d:.2}", .{kit.fromU32(e.color).contrast(kit.fromU32(@import("aba_elementos.zig").fundo(f, i)))}) catch {};
+        kit.say(w, ",\"size\":{d:.0}", &.{ kit.arg(e.size) }) catch {};
+        kit.say(w, ",\"contrast\":{d:.2}", &.{ kit.arg(kit.fromU32(e.color).contrast(kit.fromU32(@import("aba_elementos.zig").fundo(f, i)))) }) catch {};
     }
-    if (e.kind == .image and e.tex_w > 0) w.print(",\"texture\":[{d},{d}]", .{ e.tex_w, e.tex_h }) catch {};
+    if (e.kind == .image and e.tex_w > 0) kit.say(w, ",\"texture\":[{d},{d}]", &.{ kit.arg(e.tex_w), kit.arg(e.tex_h) }) catch {};
     if (e.kind == .item or e.kind == .window) {
-        w.print(",\"id\":\"0x{X:0>8}\",\"status\":{d}", .{ e.id, e.status }) catch {};
-        if (e.hit) |h| w.print(",\"hit\":{{\"id\":{d},\"hovered\":{},\"held\":{}}}", .{ h.local, h.hovered, h.held }) catch {};
+        kit.say(w, ",\"id\":\"0x{X:0>8}\",\"status\":{d}", &.{ kit.arg(e.id), kit.arg(e.status) }) catch {};
+        if (e.hit) |h| kit.say(w, ",\"hit\":{{\"id\":{d},\"hovered\":{},\"held\":{}}}", &.{ kit.arg(h.local), kit.arg(h.hovered), kit.arg(h.held) }) catch {};
         var tb: [400]u8 = undefined;
         const inside = cap.textsIn(f, e.rect, e.layer, &tb);
         if (inside.len > 0) {
@@ -259,8 +259,8 @@ fn elLine(w: *std.Io.Writer, f: *const cap.Frame, i: usize) void {
     const e = &f.els.items[i];
     var db: [200]u8 = undefined;
     const desc = @import("aba_elementos.zig").describe(f, i, &db);
-    w.print("#{d}  {d:.0},{d:.0} {d:.0}×{d:.0}  {s}", .{ i, e.rect.x, e.rect.y, e.rect.w, e.rect.h, desc }) catch return;
-    if (f.markFor(e.rect)) |m| if (e.kind != .item) w.print("  [qa:{s}]", .{m}) catch {};
+    kit.say(w, "#{d}  {d:.0},{d:.0} {d:.0}×{d:.0}  {s}", &.{ kit.arg(i), kit.arg(e.rect.x), kit.arg(e.rect.y), kit.arg(e.rect.w), kit.arg(e.rect.h), kit.arg(desc) }) catch return;
+    if (f.markFor(e.rect)) |m| if (e.kind != .item) kit.say(w, "  [qa:{s}]", &.{ kit.arg(m) }) catch {};
     w.writeAll("\n") catch {};
 }
 
@@ -313,7 +313,7 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
         if (eq(u8, cmd, "find")) return find(f, rest, w);
         if (eq(u8, cmd, "tree")) return tree(f, rest, w);
         const a = achar(f, rest) orelse {
-            w.print("nada com \"{s}\" neste quadro\n", .{rest}) catch {};
+            kit.say(w, "nada com \"{s}\" neste quadro\n", &.{ kit.arg(rest) }) catch {};
             return .pronto;
         };
         if (eq(u8, cmd, "el")) {
@@ -321,9 +321,9 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
                 .el => |i| elementJson(w, f, i),
                 .scope => |si| {
                     const s = &f.scopes.items[si];
-                    w.print("{{\"scope\":\"{s}\",\"line\":{d},\"rect\":[{d:.1},{d:.1},{d:.1},{d:.1}],\"us\":{d}}}", .{ s.name, s.line, s.rect.x, s.rect.y, s.rect.w, s.rect.h, s.us }) catch {};
+                    kit.say(w, "{{\"scope\":\"{s}\",\"line\":{d},\"rect\":[{d:.1},{d:.1},{d:.1},{d:.1}],\"us\":{d}}}", &.{ kit.arg(s.name), kit.arg(s.line), kit.arg(s.rect.x), kit.arg(s.rect.y), kit.arg(s.rect.w), kit.arg(s.rect.h), kit.arg(s.us) }) catch {};
                 },
-                .ponto => |p| w.print("{{\"point\":[{d:.1},{d:.1}]}}", .{ p[0], p[1] }) catch {},
+                .ponto => |p| kit.say(w, "{{\"point\":[{d:.1},{d:.1}]}}", &.{ kit.arg(p[0]), kit.arg(p[1]) }) catch {},
             }
             w.writeAll("\n") catch {};
             return .pronto;
@@ -331,7 +331,7 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
         if (!podeMexer(app, origem, w)) return .pronto;
         const p = centro(f, a);
         if (eq(u8, cmd, "click")) clickAt(p[0], p[1], .left) else if (eq(u8, cmd, "rclick")) clickAt(p[0], p[1], .right) else if (eq(u8, cmd, "dclick")) doubleAt(p[0], p[1]) else hoverAt(p[0], p[1]);
-        w.print("{s} em {d:.0},{d:.0}\n", .{ cmd, p[0], p[1] }) catch {};
+        kit.say(w, "{s} em {d:.0},{d:.0}\n", &.{ kit.arg(cmd), kit.arg(p[0]), kit.arg(p[1]) }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "type")) {
@@ -348,19 +348,19 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
             s = s[n..];
         }
         push(.wait);
-        w.print("digitou {d} bytes\n", .{rest.len}) catch {};
+        kit.say(w, "digitou {d} bytes\n", &.{ kit.arg(rest.len) }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "key")) {
         if (!podeMexer(app, origem, w)) return .pronto;
         const k = parseKey(rest) orelse {
-            w.print("tecla desconhecida: {s}\n", .{rest}) catch {};
+            kit.say(w, "tecla desconhecida: {s}\n", &.{ kit.arg(rest) }) catch {};
             return .pronto;
         };
         push(.{ .key = .{ .key = k.key, .mods = k.mods, .down = true } });
         push(.{ .key = .{ .key = k.key, .mods = k.mods, .down = false } });
         push(.wait);
-        w.print("tecla {s}\n", .{rest}) catch {};
+        kit.say(w, "tecla {s}\n", &.{ kit.arg(rest) }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "net")) return listNet(rest, w);
@@ -371,15 +371,15 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
     if (eq(u8, cmd, "state")) return @import("aba_estado.zig").texto(app, w);
     if (eq(u8, cmd, "theme")) {
         if (rest.len == 0) {
-            w.print("{s} ({s})\n", .{ app.themes.name(), @tagName(app.themes.mode) }) catch {};
+            kit.say(w, "{s} ({s})\n", &.{ kit.arg(app.themes.name()), kit.arg(@tagName(app.themes.mode)) }) catch {};
         } else if (eq(u8, rest, "reload")) {
             const ok = app.themes.reload();
-            w.print("{s}\n", .{if (ok) "recarregado" else (app.themes.last_error orelse "erro no tema")}) catch {};
+            kit.say(w, "{s}\n", &.{ kit.arg(if (ok) "recarregado" else (app.themes.last_error orelse "erro no tema")) }) catch {};
             if (ok) app.st.theme_gen +%= 1;
         } else if (app.themes.indexOf(rest)) |i| {
             app.handle(.{ .set_theme = i });
-            w.print("tema {s}\n", .{rest}) catch {};
-        } else w.print("tema desconhecido: {s}\n", .{rest}) catch {};
+            kit.say(w, "tema {s}\n", &.{ kit.arg(rest) }) catch {};
+        } else kit.say(w, "tema desconhecido: {s}\n", &.{ kit.arg(rest) }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "open")) {
@@ -388,11 +388,11 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
             return .pronto;
         };
         if (app.store.channel(id) == null) {
-            w.print("canal {d} não está carregado\n", .{id}) catch {};
+            kit.say(w, "canal {d} não está carregado\n", &.{ kit.arg(id) }) catch {};
             return .pronto;
         }
         app.openChannel(id, false);
-        w.print("aberto {d}\n", .{id}) catch {};
+        kit.say(w, "aberto {d}\n", &.{ kit.arg(id) }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "shot")) {
@@ -404,14 +404,14 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
         shot_path_len = rest.len;
         shot_result = .nada;
         app.gate.redraw();
-        w.print("print em {s} no próximo quadro\n", .{rest}) catch {};
+        kit.say(w, "print em {s} no próximo quadro\n", &.{ kit.arg(rest) }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "record")) {
         const on = !eq(u8, rest, "off");
         ui.gravar_fechado = on;
         reg.gravar(on or ui.aberto());
-        w.print("gravando: {s}\n", .{if (reg.gravando()) "sim" else "não"}) catch {};
+        kit.say(w, "gravando: {s}\n", &.{ kit.arg(if (reg.gravando()) "sim" else "não") }) catch {};
         return .pronto;
     }
     if (eq(u8, cmd, "clear")) {
@@ -433,7 +433,7 @@ pub fn run(app: *App, line: []const u8, w: *std.Io.Writer, origem: Origem) Fim {
         w.writeAll("ok\n") catch {};
         return .pronto;
     }
-    w.print("comando desconhecido: {s} (veja help)\n", .{cmd}) catch {};
+    kit.say(w, "comando desconhecido: {s} (veja help)\n", &.{ kit.arg(cmd) }) catch {};
     return .pronto;
 }
 
@@ -467,7 +467,7 @@ fn find(f: *const cap.Frame, q: []const u8, w: *std.Io.Writer) Fim {
             break;
         }
     }
-    if (n == 0) w.print("nada com \"{s}\"\n", .{q}) catch {};
+    if (n == 0) kit.say(w, "nada com \"{s}\"\n", &.{ kit.arg(q) }) catch {};
     return .pronto;
 }
 
@@ -475,9 +475,9 @@ fn tree(f: *const cap.Frame, only: []const u8, w: *std.Io.Writer) Fim {
     for (f.scopes.items[1..], 1..) |*s, si| {
         if (only.len > 0 and !std.mem.eql(u8, s.name, only)) continue;
         for (0..s.depth) |_| w.writeAll("  ") catch {};
-        w.print("<{s}> {d:.0},{d:.0} {d:.0}×{d:.0}", .{ s.name, s.rect.x, s.rect.y, s.rect.w, s.rect.h }) catch {};
-        if (s.line > 0) w.print(" :{d}", .{s.line}) catch {};
-        if (s.us > 0) w.print(" {d}µs", .{s.us}) catch {};
+        kit.say(w, "<{s}> {d:.0},{d:.0} {d:.0}×{d:.0}", &.{ kit.arg(s.name), kit.arg(s.rect.x), kit.arg(s.rect.y), kit.arg(s.rect.w), kit.arg(s.rect.h) }) catch {};
+        if (s.line > 0) kit.say(w, " :{d}", &.{ kit.arg(s.line) }) catch {};
+        if (s.us > 0) kit.say(w, " {d}µs", &.{ kit.arg(s.us) }) catch {};
         w.writeAll("\n") catch {};
         // Com um componente pedido, o que ele desenhou também.
         if (only.len == 0) continue;
@@ -525,12 +525,8 @@ fn listNet(rest: []const u8, w: *std.Io.Writer) Fim {
         var tb: [16]u8 = undefined;
         var db: [24]u8 = undefined;
         var sb: [24]u8 = undefined;
-        w.print("{s}  {s} {s}  {s}  {s}  {s}  {s}", .{
-            kit.clock(&tb, n.started_ms), n.methodStr(), n.url,
-            if (n.pending) "pendente" else if (n.failed) "falhou" else std.fmt.bufPrint(&sb, "{d}", .{n.status}) catch "",
-            kit.durText(&db, n.dur_us), @tagName(n.kind), n.noteStr(),
-        }) catch {};
-        if (n.waited_ms > 0) w.print("  esperou {d} ms", .{n.waited_ms}) catch {};
+        kit.say(w, "{s}  {s} {s}  {s}  {s}  {s}  {s}", &.{ kit.arg(kit.clock(&tb, n.started_ms)), kit.arg(n.methodStr()), kit.arg(n.url), kit.arg(if (n.pending) "pendente" else if (n.failed) "falhou" else kit.bufSay(&sb, "{d}", &.{ kit.arg(n.status) }) orelse ""), kit.arg(kit.durText(&db, n.dur_us)), kit.arg(@tagName(n.kind)), kit.arg(n.noteStr()) }) catch {};
+        if (n.waited_ms > 0) kit.say(w, "  esperou {d} ms", &.{ kit.arg(n.waited_ms) }) catch {};
         w.writeAll("\n") catch {};
     }
     if (col.ids.items.len == 0) w.writeAll(if (reg.gravando()) "nenhum pedido gravado\n" else "a gravação está desligada (record on)\n") catch {};
@@ -560,7 +556,7 @@ fn listGw(rest: []const u8, w: *std.Io.Writer) Fim {
             if (std.mem.indexOfScalar(u32, cc.want, g.id) == null) return;
             var tb: [16]u8 = undefined;
             var nb: [48]u8 = undefined;
-            cc.w.print("{s}  {s} {s}  {s}  {d} B  {s}\n", .{ kit.clock(&tb, g.time_ms), if (g.dir == .out) "↑" else "↓", @tagName(g.conn), @import("aba_gateway.zig").opName(g, &nb), g.size, g.payload[0..@min(g.payload.len, 160)] }) catch {};
+            kit.say(cc.w, "{s}  {s} {s}  {s}  {d} B  {s}\n", &.{ kit.arg(kit.clock(&tb, g.time_ms)), kit.arg(if (g.dir == .out) "↑" else "↓"), kit.arg(@tagName(g.conn)), kit.arg(@import("aba_gateway.zig").opName(g, &nb)), kit.arg(g.size), kit.arg(g.payload[0..@min(g.payload.len, 160)]) }) catch {};
         }
     }.f);
     if (col.ids.items.len == 0) w.writeAll("nenhum quadro gravado\n") catch {};
@@ -584,7 +580,7 @@ fn listLog(rest: []const u8, w: *std.Io.Writer) Fim {
             cc.n += 1;
             if (cc.n <= cc.skip) return;
             var tb: [16]u8 = undefined;
-            cc.w.print("{s}  {s}  {s}\n", .{ kit.clock(&tb, l.time_ms), @tagName(l.level), l.text }) catch {};
+            kit.say(cc.w, "{s}  {s}  {s}\n", &.{ kit.arg(kit.clock(&tb, l.time_ms)), kit.arg(@tagName(l.level)), kit.arg(l.text) }) catch {};
         }
     }.f);
     if (count.n == 0) w.writeAll("nenhuma linha\n") catch {};
@@ -607,7 +603,7 @@ fn listEv(rest: []const u8, w: *std.Io.Writer) Fim {
             cc.n += 1;
             if (cc.n <= cc.skip) return;
             var tb: [16]u8 = undefined;
-            cc.w.print("{s}  {s}  {s}  {s}\n", .{ kit.clock(&tb, e.time_ms), @tagName(e.kind), e.tag, e.text }) catch {};
+            kit.say(cc.w, "{s}  {s}  {s}  {s}\n", &.{ kit.arg(kit.clock(&tb, e.time_ms)), kit.arg(@tagName(e.kind)), kit.arg(e.tag), kit.arg(e.text) }) catch {};
         }
     }.f);
     if (count.n == 0) w.writeAll("nenhum evento\n") catch {};

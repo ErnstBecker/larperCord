@@ -9,6 +9,7 @@ const kit = @import("kit.zig");
 const qa = @import("../ui/qa.zig");
 const reg = @import("registros.zig");
 const json_view = @import("json_view.zig");
+const sort = @import("../core/sort.zig");
 const App = @import("../app.zig").App;
 
 const gpa = std.heap.c_allocator;
@@ -41,12 +42,20 @@ var view: json_view.View = .{};
 var split: f32 = 0.5;
 const max_rows = 8000;
 
-/// O nome do op como o Discord chama (no Dispatch, o nome do evento).
-pub fn opName(g: anytype, buf: []u8) []const u8 {
-    const op = g.op;
-    if (g.conn == .main) {
+/// O nome do op como o Discord chama (no Dispatch, o nome do evento). Serve à linha da
+/// lista e ao quadro do registro: o trabalho fica numa função só, não numa por tipo.
+pub inline fn opName(g: anytype, buf: []u8) []const u8 {
+    return nomeOp(g.conn == .main, g.op, std.mem.sliceTo(&g.t, 0), buf);
+}
+
+fn nomeOp(main: bool, op: i16, t_name: []const u8, buf: []u8) []const u8 {
+    if (main) {
         return switch (op) {
-            0 => std.fmt.bufPrint(buf, "{s}", .{if (std.mem.sliceTo(&g.t, 0).len > 0) std.mem.sliceTo(&g.t, 0) else "Dispatch"}) catch "Dispatch",
+            0 => if (t_name.len > 0) blk: {
+                const n = @min(t_name.len, buf.len);
+                @memcpy(buf[0..n], t_name[0..n]);
+                break :blk buf[0..n];
+            } else "Dispatch",
             1 => "Heartbeat",
             2 => "Identify",
             3 => "Presence Update",
@@ -61,7 +70,7 @@ pub fn opName(g: anytype, buf: []u8) []const u8 {
             14 => "Guild Subscriptions",
             37 => "Guild Subscriptions Bulk",
             43 => "Request Channel Info",
-            else => std.fmt.bufPrint(buf, "op {d}", .{op}) catch "op",
+            else => kit.bufSay(buf, "op {d}", &.{ kit.arg(op) }) orelse "op",
         };
     }
     return switch (op) {
@@ -88,7 +97,7 @@ pub fn opName(g: anytype, buf: []u8) []const u8 {
         29 => "MLS Announce Commit",
         30 => "MLS Welcome",
         31 => "MLS Invalid Commit",
-        else => std.fmt.bufPrint(buf, "op {d}", .{op}) catch "op",
+        else => kit.bufSay(buf, "op {d}", &.{ kit.arg(op) }) orelse "op",
     };
 }
 
@@ -200,7 +209,7 @@ fn list(u: *kit.Ui, r: kit.Rect, app: *App) void {
         if (row.conn == .voice) run.put(kit.pal.num, "voz ");
         var nb: [48]u8 = undefined;
         run.put(if (row.op == 0 and row.conn == .main) kit.pal.key else kit.pal.text, opName(row, &nb));
-        if (row.seq >= 0) run.print(kit.pal.faint, "  #{d}", .{row.seq});
+        if (row.seq >= 0) run.say(kit.pal.faint, "  #{d}", &.{ kit.arg(row.seq) });
         run.put(kit.pal.faint, "  ");
         run.put(kit.pal.faint, row.preview[0..row.preview_len]);
         var sb: [24]u8 = undefined;
@@ -239,13 +248,13 @@ fn overview(u: *kit.Ui, r: kit.Rect, app: *App) void {
     if (kit.section(u, x, &y, w + 10, i18n.tr("Conexão", "Connection"), &open)) {
         kit.kv(u, x, &y, w, i18n.tr("Estado", "State"), @tagName(app.store.connection), kit.pal.text);
         var lb: [24]u8 = undefined;
-        kit.kv(u, x, &y, w, i18n.tr("Latência do heartbeat", "Heartbeat latency"), std.fmt.bufPrint(&lb, "{d} ms", .{app.store.latency_ms}) catch "", kit.pal.num);
+        kit.kv(u, x, &y, w, i18n.tr("Latência do heartbeat", "Heartbeat latency"), kit.bufSay(&lb, "{d} ms", &.{ kit.arg(app.store.latency_ms) }) orelse "", kit.pal.num);
         var b1: [24]u8 = undefined;
         var b2: [24]u8 = undefined;
-        kit.kv(u, x, &y, w, i18n.tr("Recebido / enviado", "Received / sent"), std.fmt.bufPrint(&lb, "{s} / {s}", .{ kit.bytesText(&b1, reg.gw.bytes_in[0]), kit.bytesText(&b2, reg.gw.bytes_out[0]) }) catch "", kit.pal.num);
+        kit.kv(u, x, &y, w, i18n.tr("Recebido / enviado", "Received / sent"), kit.bufSay(&lb, "{s} / {s}", &.{ kit.arg(kit.bytesText(&b1, reg.gw.bytes_in[0])), kit.arg(kit.bytesText(&b2, reg.gw.bytes_out[0])) }) orelse "", kit.pal.num);
         if (reg.gw.bytes_in[1] + reg.gw.bytes_out[1] > 0) {
             var vb: [48]u8 = undefined;
-            kit.kv(u, x, &y, w, i18n.tr("Voz: recebido / enviado", "Voice: received / sent"), std.fmt.bufPrint(&vb, "{s} / {s}", .{ kit.bytesText(&b1, reg.gw.bytes_in[1]), kit.bytesText(&b2, reg.gw.bytes_out[1]) }) catch "", kit.pal.num);
+            kit.kv(u, x, &y, w, i18n.tr("Voz: recebido / enviado", "Voice: received / sent"), kit.bufSay(&vb, "{s} / {s}", &.{ kit.arg(kit.bytesText(&b1, reg.gw.bytes_in[1])), kit.arg(kit.bytesText(&b2, reg.gw.bytes_out[1])) }) orelse "", kit.pal.num);
         }
         y += 6;
     }
@@ -279,7 +288,7 @@ fn overview(u: *kit.Ui, r: kit.Rect, app: *App) void {
                 return cs[a] > cs[b];
             }
         };
-        std.mem.sort(usize, order[0..n], &counts, S.gt);
+        sort.stable(usize, order[0..n], &counts, S.gt);
         const top = counts[order[0]];
         for (order[0..@min(n, 24)]) |k| {
             const name = std.mem.sliceTo(&names[k], 0);
@@ -287,7 +296,7 @@ fn overview(u: *kit.Ui, r: kit.Rect, app: *App) void {
             const bw = (w - 260) * @as(f32, @floatFromInt(counts[k])) / @as(f32, @floatFromInt(top));
             kit.rect(u, .{ .x = x + 210, .y = y + 6, .w = @max(2, bw), .h = 8 }, kit.pal.accent.alpha(0.6), 2);
             var cb: [16]u8 = undefined;
-            _ = u.code(x + w - 40, u.midCode(y, 19), kit.pal.dim, std.fmt.bufPrint(&cb, "{d}", .{counts[k]}) catch "");
+            _ = u.code(x + w - 40, u.midCode(y, 19), kit.pal.dim, kit.bufSay(&cb, "{d}", &.{ kit.arg(counts[k]) }) orelse "");
             y += 19;
         }
     };
