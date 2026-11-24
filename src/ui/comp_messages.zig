@@ -2075,8 +2075,10 @@ pub fn composer(ctx: *d.Ctx, n: *const kdl.Node, r_in: d.Rect) void {
         const ib: d.Rect = .{ .x = bb.right() + 2, .y = bb.y, .w = bw, .h = bb.h };
         qa.mark(bb, "composer-bold", .{});
         qa.mark(ib, "composer-italic", .{});
-        const bh = d.hit(ctx, 41, bb);
-        const ih = d.hit(ctx, 42, ib);
+        // Ids só da barra: o 41 é o do microfone (ui/gravar_audio.zig), desenhado antes nesta
+        // mesma caixa; com o mesmo id, soltar o mouse no B soltava o botão do microfone.
+        const bh = d.hit(ctx, 0x0B01, bb);
+        const ih = d.hit(ctx, 0x0B02, ib);
         d.text(dl, fam.get(.bold), fs, bb.x + (bb.w - d.width(fam.get(.bold), fs, "B")) / 2, d.centerY(bb, fs), if (bh.hovered) ctx.col(.text) else ctx.col(.muted), "B");
         d.text(dl, fam.get(.regular), fs, ib.x + (ib.w - d.width(fam.get(.regular), fs, "I")) / 2, d.centerY(ib, fs), if (ih.hovered) ctx.col(.text) else ctx.col(.muted), "I");
         if (bh.clicked) mdWrap(st, @intCast(sel_start), @intCast(sel_end), "**");
