@@ -378,18 +378,29 @@ def no_windows():
     wait_until(lambda: not windows(), 5)
 
 
-def fresh_home(settings=None):
+def fresh_home(settings="", opening=False):
     d = Path(tempfile.mkdtemp(prefix="larper-qa-"))
     (d / "config" / "larpercord").mkdir(parents=True)
-    if settings:
-        (d / "config/larpercord/settings.kdl").write_text(f"settings {settings}\n")
+    # Sem a abertura do mascote. A demonstração a mostra inteira antes de entrar, e o
+    # relógio dela anda por quadro (no máximo 1/30 s cada): aqui (build de debug,
+    # renderizador por software, Xvfb, máquina ocupada) saem 2 ou 3 quadros por
+    # segundo, e os 3,4 s da abertura viram quase um minuto. Até ela acabar o app não
+    # entrou, e fechar sai de propósito (janela.wantsTray), com painel ou sem: o teste
+    # fecharia um app que ainda não entrou, e o "fechar sai" passaria pelo motivo
+    # errado. Com Reduzir movimento a demonstração entra direto, como no QA e nos
+    # prints. `opening`: com a abertura (ver `opening_closes`).
+    if not opening:
+        settings = f"reduce_motion=#true {settings}"
+    if settings.strip():
+        (d / "config/larpercord/settings.kdl").write_text(f"settings {settings.strip()}\n")
     return d
 
 
 def start(home, *args, **kw):
     """Abre e espera a janela aparecer de verdade (já pintada)."""
     a = App(home, *args, **kw)
-    # Pintada já tem o app de pé: antes disso, fechar seria sair (sem conexão).
+    # Pintada (e sem a abertura, ver fresh_home) já tem o app de pé: antes disso,
+    # fechar seria sair (sem conexão).
     wait_until(lambda: painted() or not a.alive(), 20)
     time.sleep(1.0)
     return a
@@ -460,6 +471,22 @@ def option_off():
     code = a.wait(5)
     check("fechar encerra o processo", code == 0, f"código {code}")
     check("nenhum ícone foi criado", not panel.items())
+    a.kill()
+    shutil.rmtree(home)
+
+
+def opening_closes():
+    section("com a abertura da demonstração na tela (antes de entrar): fechar sai, mesmo com painel")
+    panel.up()
+    panel.clear()
+    home = fresh_home(opening=True)
+    a = start(home)
+    icons = len(panel.items())
+    t = time.time()
+    close_window()
+    code = a.wait(8)
+    check("fechar antes de entrar encerra o processo, sem ir para a bandeja", code == 0, f"código {code}, {time.time() - t:.2f} s, {icons} ícone(s) no painel")
+    check("sem passar pelo vigia", "encerramento demorou" not in a.output())
     a.kill()
     shutil.rmtree(home)
 
@@ -757,6 +784,7 @@ def panel_dies():
 try:
     no_panel()
     option_off()
+    opening_closes()
     full_flow()
     restarted()
     demo_not_gated()
