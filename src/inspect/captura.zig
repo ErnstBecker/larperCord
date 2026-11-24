@@ -11,6 +11,8 @@ const std = @import("std");
 const c = @import("c");
 const layout = @import("../theme/layout.zig");
 const kdl = @import("../theme/kdl.zig");
+// Ordenação sem uma cópia do `std.mem.sort` por tipo (cada uma são ~20 KB no executável).
+const sort = @import("../core/sort.zig");
 
 pub const Rect = layout.Rect;
 const gpa = std.heap.c_allocator;
@@ -351,7 +353,7 @@ pub fn endFrame(mouse: c.ImVec2, win: Rect) void {
             return a.id < b.id;
         }
     };
-    std.mem.sortUnstable(@TypeOf(hits.items[0]), hits.items, {}, sort_hits.lt);
+    sort.stable(@TypeOf(hits.items[0]), hits.items, {}, sort_hits.lt);
     for (0..n) |i| {
         if (f.els.items.len >= max_els) break;
         const it = items[i];
@@ -377,7 +379,7 @@ pub fn endFrame(mouse: c.ImVec2, win: Rect) void {
             return a.order < b.order;
         }
     };
-    std.mem.sort(El, f.els.items, {}, by_order.lt);
+    sort.stable(El, f.els.items, {}, by_order.lt);
     mergeTexts(f);
     // As camadas: a ordem das listas de desenho no resultado final (de trás para a frente).
     const dd = c.ImGui_GetDrawData();
@@ -415,7 +417,15 @@ fn mergeTexts(f: *Frame) void {
                     var b: [max_text]u8 = undefined;
                     const a = f.str(p.str);
                     const sp: []const u8 = if (gap > e.size * 0.12) " " else "";
-                    const joined = std.fmt.bufPrint(&b, "{s}{s}{s}", .{ a, sp, f.str(e.str) }) catch a;
+                    // Junta à mão (o bufPrint geraria o próprio código só para isto).
+                    const z = f.str(e.str);
+                    const n = a.len + sp.len + z.len;
+                    const joined = if (n <= b.len) blk: {
+                        @memcpy(b[0..a.len], a);
+                        @memcpy(b[a.len..][0..sp.len], sp);
+                        @memcpy(b[a.len + sp.len ..][0..z.len], z);
+                        break :blk b[0..n];
+                    } else a;
                     p.str = keep(joined);
                     p.rect.w = e.rect.right() - p.rect.x;
                     continue;
@@ -531,7 +541,7 @@ pub fn ancestors(f: *const Frame, i: usize, out: []usize) []usize {
             return area(ff.els.items[a].rect) < area(ff.els.items[b].rect);
         }
     };
-    std.mem.sort(usize, out[0..n], f, S.lt);
+    sort.stable(usize, out[0..n], f, S.lt);
     return out[0..n];
 }
 

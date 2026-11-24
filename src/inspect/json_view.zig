@@ -142,8 +142,8 @@ fn preview(w: *std.Io.Writer, val: *const Value, depth: u8) void {
     switch (val.*) {
         .null => w.writeAll("null") catch {},
         .bool => |b| w.writeAll(if (b) "true" else "false") catch {},
-        .integer => |n| w.print("{d}", .{n}) catch {},
-        .float => |f| w.print("{d}", .{f}) catch {},
+        .integer => |n| kit.say(w, "{d}", &.{ kit.arg(n) }) catch {},
+        .float => |f| kit.say(w, "{d}", &.{ kit.arg(f) }) catch {},
         .number_string => |s| w.writeAll(s) catch {},
         .string => |s| {
             w.writeByte('"') catch {};
@@ -152,9 +152,9 @@ fn preview(w: *std.Io.Writer, val: *const Value, depth: u8) void {
             w.writeByte('"') catch {};
         },
         .array => |a| if (depth > 0) {
-            w.print("Array({d})", .{a.items.len}) catch {};
+            kit.say(w, "Array({d})", &.{ kit.arg(a.items.len) }) catch {};
         } else {
-            w.print("Array({d}) [", .{a.items.len}) catch {};
+            kit.say(w, "Array({d}) [", &.{ kit.arg(a.items.len) }) catch {};
             for (a.items[0..@min(a.items.len, 4)], 0..) |*it, i| {
                 if (i > 0) w.writeAll(", ") catch {};
                 preview(w, it, depth + 1);
@@ -174,7 +174,7 @@ fn preview(w: *std.Io.Writer, val: *const Value, depth: u8) void {
                     break;
                 }
                 if (i > 0) w.writeAll(", ") catch {};
-                w.print("{s}: ", .{e.key_ptr.*}) catch {};
+                kit.say(w, "{s}: ", &.{ kit.arg(e.key_ptr.*) }) catch {};
                 preview(w, e.value_ptr, depth + 1);
             }
             w.writeAll("}") catch {};
@@ -212,7 +212,7 @@ pub fn draw(u: *kit.Ui, v: *View, id: [*:0]const u8, r: kit.Rect) void {
     var x = r.x + 6;
     const sw = @min(220, r.w * 0.45);
     var find_id_buf: [64]u8 = undefined;
-    const find_id = std.fmt.bufPrintSentinel(&find_id_buf, "##jfind{s}", .{std.mem.span(id)}, 0) catch "##jfind";
+    const find_id = kit.bufSayZ(&find_id_buf, "##jfind{s}", &.{ kit.arg(std.mem.span(id)) }) orelse "##jfind";
     if (kit.search(u, find_id.ptr, .{ .x = x, .y = r.y + 4, .w = sw, .h = bar_h - 8 }, &v.find, i18n.trZ("Buscar no JSON", "Search JSON"))) {
         if (v.root) |root| if (kit.bufStr(&v.find).len > 0) {
             _ = openMatches(v, root, 1, kit.bufStr(&v.find), 0);
@@ -255,7 +255,7 @@ pub fn draw(u: *kit.Ui, v: *View, id: [*:0]const u8, r: kit.Rect) void {
         if (container) kit.icon(u.dl, if (row.open) .chevron_d else .chevron_r, ix + 4, y + rh / 2, kit.pal.dim);
         var run: kit.Run = .{ .u = u, .x = ix + 12, .y = u.midCode(y, rh), .max_x = body.right() - 6 };
         if (row.index) |n| {
-            run.print(kit.pal.faint, "{d}", .{n});
+            run.say(kit.pal.faint, "{d}", &.{ kit.arg(n) });
             run.put(kit.pal.dim, ": ");
         } else if (row.depth > 0) {
             const hit_key = needle.len > 0 and kit.has(row.key, needle);
@@ -268,7 +268,7 @@ pub fn draw(u: *kit.Ui, v: *View, id: [*:0]const u8, r: kit.Rect) void {
         preview(&pw, row.value, if (row.open) 1 else 0);
         const shown = if (container and row.open) (if (row.value.* == .array) blk: {
             var ab: [32]u8 = undefined;
-            break :blk std.fmt.bufPrint(&ab, "Array({d})", .{row.value.array.items.len}) catch "";
+            break :blk kit.bufSay(&ab, "Array({d})", &.{ kit.arg(row.value.array.items.len) }) orelse "";
         } else "{…}") else pw.buffered();
         if (needle.len > 0 and row.value.* == .string and kit.has(row.value.string, needle))
             kit.rect(u, .{ .x = run.x - 1, .y = y + 2, .w = @min(u.codeW(shown), run.max_x - run.x) + 2, .h = rh - 4 }, kit.pal.warn.alpha(0.35), 2);

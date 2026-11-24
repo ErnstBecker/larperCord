@@ -406,7 +406,7 @@ fn header(u: *kit.Ui, r: kit.Rect) void {
             c.ImGui_PushFontFloat(u.font, u.fs);
             for (hidden[0..n_hidden]) |i| {
                 var lb: [64]u8 = undefined;
-                const z = std.fmt.bufPrintSentinel(&lb, "{s}", .{i18n.tr(tabs[i].pt, tabs[i].en)}, 0) catch continue;
+                const z = kit.bufSayZ(&lb, "{s}", &.{ kit.arg(i18n.tr(tabs[i].pt, tabs[i].en)) }) orelse continue;
                 if (c.ImGui_MenuItem(z.ptr)) aba = tabs[i].a;
             }
             c.ImGui_PopFont();
@@ -465,7 +465,7 @@ fn badgeOf(a: Aba) Badge {
         },
         else => {},
     }
-    if (b.n > 0) b.len = if (std.fmt.bufPrint(&b.buf, "{d}", .{b.n})) |t| t.len else |_| 0;
+    if (b.n > 0) b.len = if (kit.bufSay(&b.buf, "{d}", &.{ kit.arg(b.n) })) |t| t.len else 0;
     return b;
 }
 
@@ -515,7 +515,7 @@ fn scopeBox(ctx: *d.Ctx, fg: *c.ImDrawList, f: *const cap.Frame, si: usize) void
     d.rect(fg, s.rect, kit.pal.hl_scope.alpha(0.16), 0);
     d.border(fg, s.rect, kit.pal.hl_scope, 0, 1.5);
     var b: [96]u8 = undefined;
-    const label = std.fmt.bufPrint(&b, "{s}  {d:.0} × {d:.0}", .{ s.name, s.rect.w, s.rect.h }) catch s.name;
+    const label = kit.bufSay(&b, "{s}  {d:.0} × {d:.0}", &.{ kit.arg(s.name), kit.arg(s.rect.w), kit.arg(s.rect.h) }) orelse s.name;
     tag(ctx, fg, s.rect, label, kit.pal.hl_scope);
 }
 
@@ -565,33 +565,33 @@ fn card(ctx: *d.Ctx, fg: *c.ImDrawList, f: *const cap.Frame, i: usize) void {
     const head = desc(f, i, &hb);
     // Linhas: tamanho, cor/fonte, contraste, origem no tema.
     var sz: [48]u8 = undefined;
-    const size_s = std.fmt.bufPrint(&sz, "{d:.0} × {d:.0}", .{ e.rect.w, e.rect.h }) catch "";
+    const size_s = kit.bufSay(&sz, "{d:.0} × {d:.0}", &.{ kit.arg(e.rect.w), kit.arg(e.rect.h) }) orelse "";
     if (e.kind == .text or e.kind == .fill or e.kind == .border) {
         var hx: [12]u8 = undefined;
         const tok = @import("aba_elementos.zig").tokenName(ctx.th, e.color);
-        lens[n] = if (std.fmt.bufPrint(&lines[n], "{s}  {s}{s}{s}", .{ i18n.tr("Cor", "Color"), kit.hexOf(&hx, e.color), if (tok.len > 0) "  " else "", tok })) |t| t.len else |_| 0;
+        lens[n] = if (kit.bufSay(&lines[n], "{s}  {s}{s}{s}", &.{ kit.arg(i18n.tr("Cor", "Color")), kit.arg(kit.hexOf(&hx, e.color)), kit.arg(if (tok.len > 0) "  " else ""), kit.arg(tok) })) |t| t.len else 0;
         cols[n] = kit.pal.text;
         n += 1;
     }
     if (e.kind == .text) {
-        lens[n] = if (std.fmt.bufPrint(&lines[n], "{s}  {s} {d:.0}px", .{ i18n.tr("Fonte", "Font"), @import("aba_elementos.zig").fontName(ctx, e.font), e.size })) |t| t.len else |_| 0;
+        lens[n] = if (kit.bufSay(&lines[n], "{s}  {s} {d:.0}px", &.{ kit.arg(i18n.tr("Fonte", "Font")), kit.arg(@import("aba_elementos.zig").fontName(ctx, e.font)), kit.arg(e.size) })) |t| t.len else 0;
         cols[n] = kit.pal.text;
         n += 1;
         {
             const ratio = kit.fromU32(e.color).contrast(kit.fromU32(@import("aba_elementos.zig").fundo(f, i)));
             const ok = ratio >= 4.5;
-            lens[n] = if (std.fmt.bufPrint(&lines[n], "{s}  {d:.2}  {s}", .{ i18n.tr("Contraste", "Contrast"), ratio, if (ratio >= 7) "AAA" else if (ok) "AA" else i18n.tr("baixo", "low") })) |t| t.len else |_| 0;
+            lens[n] = if (kit.bufSay(&lines[n], "{s}  {d:.2}  {s}", &.{ kit.arg(i18n.tr("Contraste", "Contrast")), kit.arg(ratio), kit.arg(if (ratio >= 7) "AAA" else if (ok) "AA" else i18n.tr("baixo", "low")) })) |t| t.len else 0;
             cols[n] = if (ok) kit.pal.ok else kit.pal.err;
             n += 1;
         }
     }
     if (f.scopeOf(e)) |s| if (s.line > 0) {
-        lens[n] = if (std.fmt.bufPrint(&lines[n], "{s}  {s}:{d}", .{ i18n.tr("Tema", "Theme"), @import("aba_elementos.zig").themeFile(), s.line })) |t| t.len else |_| 0;
+        lens[n] = if (kit.bufSay(&lines[n], "{s}  {s}:{d}", &.{ kit.arg(i18n.tr("Tema", "Theme")), kit.arg(@import("aba_elementos.zig").themeFile()), kit.arg(s.line) })) |t| t.len else 0;
         cols[n] = kit.pal.hl_scope;
         n += 1;
     };
     if (f.markFor(e.rect)) |m| {
-        lens[n] = if (std.fmt.bufPrint(&lines[n], "QA  {s}", .{m})) |t| t.len else |_| 0;
+        lens[n] = if (kit.bufSay(&lines[n], "QA  {s}", &.{ kit.arg(m) })) |t| t.len else 0;
         cols[n] = kit.pal.dim;
         n += 1;
     }

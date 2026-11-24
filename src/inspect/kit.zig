@@ -337,7 +337,7 @@ pub fn button(u: *const Ui, x: f32, y: f32, h: f32, label: []const u8, which: ?I
 /// Ficha que liga e desliga (os filtros de tipo da Rede, os níveis do Console).
 pub fn chip(u: *const Ui, x: f32, y: f32, h: f32, label: []const u8, on: bool, count: ?u32) struct { clicked: bool, w: f32 } {
     var cb: [16]u8 = undefined;
-    const count_s: []const u8 = if (count) |n| std.fmt.bufPrint(&cb, "{d}", .{n}) catch "" else "";
+    const count_s: []const u8 = if (count) |n| bufSay(&cb, "{d}", &.{ arg(n) }) orelse "" else "";
     const cw: f32 = if (count_s.len > 0) d.width(u.font, u.fs - 1.5, count_s) + 10 else 0;
     const w = u.textW(label) + 16 + cw;
     const r: Rect = .{ .x = x, .y = y, .w = w, .h = h };
@@ -517,6 +517,134 @@ pub fn endPane(u: *Ui, r: Rect, y_end: f32, parent_dl: *c.ImDrawList) void {
     u.dl = parent_dl;
 }
 
+// --- Texto formatado ------------------------------------------------------------
+
+/// Um valor para `say`/`bufSay`: o formatador do Inspetor. O `print` do std.fmt gera o
+/// código de cada chamada de novo (centenas de bytes por argumento); aqui o texto de
+/// formato é lido em tempo de execução por uma função só. Os formatos são os mesmos do
+/// std.fmt que o Inspetor usa: `{d}`, `{s}`, `{}`, `{d:.1}`, `{X:0>8}`, `{{` e `}}`.
+pub const Arg = union(enum) { s: []const u8, u: u64, i: i64, f32_: f32, f64_: f64, b: bool };
+
+/// O `Arg` de um valor: inteiro, float, bool ou texto.
+pub inline fn arg(x: anytype) Arg {
+    const T = @TypeOf(x);
+    return switch (@typeInfo(T)) {
+        .int => |i| if (i.signedness == .signed) .{ .i = x } else .{ .u = x },
+        .comptime_int => if (x < 0) .{ .i = x } else .{ .u = x },
+        .float => if (T == f32) .{ .f32_ = x } else .{ .f64_ = x },
+        .comptime_float => .{ .f64_ = x },
+        .bool => .{ .b = x },
+        else => .{ .s = x },
+    };
+}
+
+pub fn say(w: *std.Io.Writer, f: []const u8, args: []const Arg) std.Io.Writer.Error!void {
+    return sayErr(w, f, args);
+}
+
+/// Como o `std.fmt.bufPrint`: null quando não coube.
+pub fn bufSay(buf: []u8, f: []const u8, args: []const Arg) ?[]const u8 {
+    var w = std.Io.Writer.fixed(buf);
+    sayErr(&w, f, args) catch return null;
+    return w.buffered();
+}
+
+/// Como o `std.fmt.bufPrintSentinel(…, 0)`.
+pub fn bufSayZ(buf: []u8, f: []const u8, args: []const Arg) ?[:0]const u8 {
+    if (buf.len == 0) return null;
+    var w = std.Io.Writer.fixed(buf[0 .. buf.len - 1]);
+    sayErr(&w, f, args) catch return null;
+    const n = w.buffered().len;
+    buf[n] = 0;
+    return buf[0..n :0];
+}
+
+/// Como o `d.printClip`: o que couber, sem um caractere partido no fim.
+pub fn clipSay(buf: []u8, f: []const u8, args: []const Arg) []const u8 {
+    var wr = std.Io.Writer.fixed(buf);
+    sayErr(&wr, f, args) catch {};
+    const out = wr.buffered();
+    if (out.len < buf.len) return out;
+    var k = out.len;
+    while (k > 0 and (out[k - 1] & 0xC0) == 0x80) k -= 1;
+    if (k > 0 and out[k - 1] >= 0xC0) {
+        const want = std.unicode.utf8ByteSequenceLength(out[k - 1]) catch 1;
+        if (out.len - (k - 1) < want) return out[0 .. k - 1];
+    }
+    return out;
+}
+
+fn sayErr(w: *std.Io.Writer, f: []const u8, args: []const Arg) std.Io.Writer.Error!void {
+    var i: usize = 0;
+    var k: usize = 0;
+    while (i < f.len) {
+        const ch = f[i];
+        if ((ch == '{' or ch == '}') and i + 1 < f.len and f[i + 1] == ch) {
+            try w.writeByte(ch);
+            i += 2;
+            continue;
+        }
+        if (ch == '{') {
+            const end = std.mem.indexOfScalarPos(u8, f, i, '}') orelse f.len;
+            if (k < args.len) try one(w, f[i + 1 .. end], args[k]);
+            k += 1;
+            i = @min(end + 1, f.len);
+            continue;
+        }
+        var j = i + 1;
+        while (j < f.len and f[j] != '{' and f[j] != '}') j += 1;
+        try w.writeAll(f[i..j]);
+        i = j;
+    }
+}
+
+/// Um valor com o que vem entre as chaves: `d`, `s`, `x` ou `X` e, depois de `:`, o
+/// preenchimento com o alinhamento (`0>`), a largura e as casas (`.1`).
+fn one(w: *std.Io.Writer, spec: []const u8, x: Arg) std.Io.Writer.Error!void {
+    var o: std.fmt.Options = .{};
+    var kind: u8 = 0;
+    var rest = spec;
+    if (rest.len > 0 and rest[0] != ':') {
+        kind = rest[0];
+        rest = rest[1..];
+    }
+    if (rest.len > 0 and rest[0] == ':') {
+        rest = rest[1..];
+        if (rest.len >= 2 and (rest[1] == '<' or rest[1] == '>' or rest[1] == '^')) {
+            o.fill = rest[0];
+            o.alignment = switch (rest[1]) {
+                '<' => .left,
+                '^' => .center,
+                else => .right,
+            };
+            rest = rest[2..];
+        }
+        var n: usize = 0;
+        var digits = false;
+        while (rest.len > 0 and std.ascii.isDigit(rest[0])) : (rest = rest[1..]) {
+            n = n * 10 + (rest[0] - '0');
+            digits = true;
+        }
+        if (digits) o.width = n;
+        if (rest.len > 0 and rest[0] == '.') {
+            rest = rest[1..];
+            n = 0;
+            while (rest.len > 0 and std.ascii.isDigit(rest[0])) : (rest = rest[1..]) n = n * 10 + (rest[0] - '0');
+            o.precision = n;
+        }
+    }
+    const base: u8 = if (kind == 'x' or kind == 'X') 16 else 10;
+    const case: std.fmt.Case = if (kind == 'X') .upper else .lower;
+    switch (x) {
+        .s => |s| try w.alignBufferOptions(s, o),
+        .b => |b| try w.alignBufferOptions(if (b) "true" else "false", o),
+        .u => |v| try w.printInt(v, base, case, o),
+        .i => |v| try w.printInt(v, base, case, o),
+        .f32_ => |v| try w.printFloat(v, o.toNumber(.decimal, .lower)),
+        .f64_ => |v| try w.printFloat(v, o.toNumber(.decimal, .lower)),
+    }
+}
+
 // --- Texto colorido --------------------------------------------------------------
 
 /// Uma linha montada aos pedaços, cada um com a sua cor (a árvore de elementos, o JSON).
@@ -542,9 +670,9 @@ pub const Run = struct {
         }
     }
 
-    pub fn print(r: *Run, col: Rgba, comptime fmt: []const u8, args: anytype) void {
+    pub fn say(r: *Run, col: Rgba, f: []const u8, args: []const Arg) void {
         var b: [256]u8 = undefined;
-        r.put(col, d.printClip(&b, fmt, args));
+        r.put(col, clipSay(&b, f, args));
     }
 };
 
@@ -600,21 +728,24 @@ pub fn fromU32(v: u32) Rgba {
 
 /// "#rrggbb" ou "#rrggbbaa" de uma cor do ImGui (ABGR).
 pub fn hexOf(buf: []u8, v: u32) []const u8 {
-    const r = v & 0xff;
-    const g = (v >> 8) & 0xff;
-    const b = (v >> 16) & 0xff;
-    const a = (v >> 24) & 0xff;
-    return if (a == 0xff)
-        std.fmt.bufPrint(buf, "#{x:0>2}{x:0>2}{x:0>2}", .{ r, g, b }) catch ""
-    else
-        std.fmt.bufPrint(buf, "#{x:0>2}{x:0>2}{x:0>2}{x:0>2}", .{ r, g, b, a }) catch "";
+    // À mão: o `{x:0>2}` do std.fmt gerava ~2,5 KB para isto.
+    const n: usize = if (v >> 24 == 0xff) 3 else 4;
+    if (buf.len < 1 + n * 2) return "";
+    const digits = "0123456789abcdef";
+    buf[0] = '#';
+    for (0..n) |i| {
+        const byte: u8 = @truncate(v >> @intCast(i * 8));
+        buf[1 + i * 2] = digits[byte >> 4];
+        buf[2 + i * 2] = digits[byte & 15];
+    }
+    return buf[0 .. 1 + n * 2];
 }
 
 pub var copied_at_ms: i64 = 0;
 
 pub fn copyText(s: []const u8) void {
     var b: [8192]u8 = undefined;
-    const z = std.fmt.bufPrintSentinel(&b, "{s}", .{s[0..@min(s.len, b.len - 1)]}, 0) catch return;
+    const z = bufSayZ(&b, "{s}", &.{ arg(s[0..@min(s.len, b.len - 1)]) }) orelse return;
     _ = c.SDL_SetClipboardText(z.ptr);
     copied_at_ms = @intCast(c.SDL_GetTicks());
 }
@@ -632,19 +763,33 @@ pub fn copyLong(s: []const u8) void {
 pub fn clock(buf: []u8, ms: i64) []const u8 {
     var dt: c.SDL_DateTime = undefined;
     if (!c.SDL_TimeToDateTime(ms * std.time.ns_per_ms, &dt, true)) return "";
-    return std.fmt.bufPrint(buf, "{d:0>2}:{d:0>2}:{d:0>2}.{d:0>3}", .{ @as(u32, @intCast(dt.hour)), @as(u32, @intCast(dt.minute)), @as(u32, @intCast(dt.second)), @as(u32, @intCast(@divTrunc(dt.nanosecond, 1_000_000))) }) catch "";
+    return horaTexto(buf, @intCast(dt.hour), @intCast(dt.minute), @intCast(dt.second), @intCast(@divTrunc(dt.nanosecond, 1_000_000)));
+}
+
+/// "14:02:33.120", à mão como o hexOf: o `{d:0>2}` do std.fmt gerava ~1,8 KB.
+fn horaTexto(buf: []u8, h: u32, m: u32, s: u32, milli: u32) []const u8 {
+    if (buf.len < 12) return "";
+    for ([_]u32{ h, m, s }, 0..) |v, i| {
+        buf[i * 3] = '0' + @as(u8, @intCast(v / 10 % 10));
+        buf[i * 3 + 1] = '0' + @as(u8, @intCast(v % 10));
+        buf[i * 3 + 2] = if (i < 2) ':' else '.';
+    }
+    buf[9] = '0' + @as(u8, @intCast(milli / 100 % 10));
+    buf[10] = '0' + @as(u8, @intCast(milli / 10 % 10));
+    buf[11] = '0' + @as(u8, @intCast(milli % 10));
+    return buf[0..12];
 }
 
 pub fn bytesText(buf: []u8, n: usize) []const u8 {
-    if (n < 1024) return std.fmt.bufPrint(buf, "{d} B", .{n}) catch "";
-    if (n < 1024 * 1024) return std.fmt.bufPrint(buf, "{d:.1} kB", .{@as(f64, @floatFromInt(n)) / 1024}) catch "";
-    return std.fmt.bufPrint(buf, "{d:.2} MB", .{@as(f64, @floatFromInt(n)) / (1024 * 1024)}) catch "";
+    if (n < 1024) return bufSay(buf, "{d} B", &.{ arg(n) }) orelse "";
+    if (n < 1024 * 1024) return bufSay(buf, "{d:.1} kB", &.{ arg(@as(f64, @floatFromInt(n)) / 1024) }) orelse "";
+    return bufSay(buf, "{d:.2} MB", &.{ arg(@as(f64, @floatFromInt(n)) / (1024 * 1024)) }) orelse "";
 }
 
 pub fn durText(buf: []u8, us: u64) []const u8 {
-    if (us < 1000) return std.fmt.bufPrint(buf, "{d} µs", .{us}) catch "";
-    if (us < 1_000_000) return std.fmt.bufPrint(buf, "{d:.1} ms", .{@as(f64, @floatFromInt(us)) / 1000}) catch "";
-    return std.fmt.bufPrint(buf, "{d:.2} s", .{@as(f64, @floatFromInt(us)) / 1_000_000}) catch "";
+    if (us < 1000) return bufSay(buf, "{d} µs", &.{ arg(us) }) orelse "";
+    if (us < 1_000_000) return bufSay(buf, "{d:.1} ms", &.{ arg(@as(f64, @floatFromInt(us)) / 1000) }) orelse "";
+    return bufSay(buf, "{d:.2} s", &.{ arg(@as(f64, @floatFromInt(us)) / 1_000_000) }) orelse "";
 }
 
 const t = std.testing;
@@ -660,6 +805,50 @@ test "cor do ImGui em hex" {
     var b: [12]u8 = undefined;
     try t.expectEqualStrings("#5865f2", hexOf(&b, 0xFFF26558));
     try t.expectEqualStrings("#5865f280", hexOf(&b, 0x80F26558));
+    try t.expectEqualStrings("#000000", hexOf(&b, 0xFF000000));
+    try t.expectEqualStrings("#ffffff00", hexOf(&b, 0x00FFFFFF));
+    var curto: [8]u8 = undefined;
+    try t.expectEqualStrings("", hexOf(&curto, 0x80F26558));
+}
+
+test "hora da lista: dois dígitos e os milissegundos com três" {
+    var b: [16]u8 = undefined;
+    try t.expectEqualStrings("14:02:33.120", horaTexto(&b, 14, 2, 33, 120));
+    try t.expectEqualStrings("00:00:00.007", horaTexto(&b, 0, 0, 0, 7));
+    try t.expectEqualStrings("23:59:59.999", horaTexto(&b, 23, 59, 59, 999));
+    var curto: [11]u8 = undefined;
+    try t.expectEqualStrings("", horaTexto(&curto, 1, 2, 3, 4));
+}
+
+/// O mesmo texto pelo std.fmt e pelo `say`.
+fn igual(comptime f: []const u8, args: anytype) !void {
+    var a1: [256]u8 = undefined;
+    var a2: [256]u8 = undefined;
+    const esperado = try std.fmt.bufPrint(&a1, f, args);
+    var lista: [8]Arg = undefined;
+    inline for (args, 0..) |x, i| lista[i] = arg(x);
+    try t.expectEqualStrings(esperado, bufSay(&a2, f, lista[0..args.len]).?);
+}
+
+test "o formatador do Inspetor escreve como o std.fmt" {
+    try igual("{d} / {d} / {d}", .{ @as(u32, 7), @as(usize, 0), @as(i64, -42) });
+    try igual("{s} ({d})", .{ "nome", @as(u64, std.math.maxInt(u64)) });
+    try igual("{d:.0} × {d:.0}", .{ @as(f32, 1279.6), @as(f32, 719.4) });
+    try igual("{d:.1} ms · {d:.2} s · {d:.3}", .{ @as(f64, 12.345), @as(f64, 1.005), @as(f32, 0.1) });
+    try igual("{d} {d}", .{ @as(f32, 0.1), @as(f64, 0.1) });
+    try igual("\"id\":\"0x{X:0>8}\",\"x\":{d:0>2}", .{ @as(u32, 0x1a2b), @as(u32, 7) });
+    try igual("{{\"visible\":{},\"n\":{d}}}", .{ true, @as(i16, -3) });
+    try igual("{d}%", .{@as(u8, 100)});
+    try igual("sem nada", .{});
+    // Faltou espaço: null, como o erro do bufPrint.
+    var b: [4]u8 = undefined;
+    try t.expect(bufSay(&b, "{s}", &.{arg("cinco")}) == null);
+    var z: [8]u8 = undefined;
+    try t.expectEqualStrings("ab 3", bufSayZ(&z, "{s} {d}", &.{ arg("ab"), arg(@as(u8, 3)) }).?);
+    try t.expect(bufSayZ(&z, "{s}", &.{arg("12345678")}) == null);
+    // Cortado sem partir o "é" (2 bytes) no fim.
+    var c3: [3]u8 = undefined;
+    try t.expectEqualStrings("ab", clipSay(&c3, "{s}", &.{arg("abé")}));
 }
 
 test "tamanhos e durações legíveis" {
