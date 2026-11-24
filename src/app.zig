@@ -784,6 +784,7 @@ pub const App = struct {
         send_limits.reset();
         app.themes.deinit();
         @import("ui/camada.zig").shutdown();
+        @import("ui/carimbo.zig").shutdown();
         // Saindo da bandeja, os backends já tinham saído junto com a janela (`releaseGpu`).
         if (app.win.window != null) {
             c.cImGui_ImplSDLRenderer3_Shutdown();
@@ -3523,6 +3524,8 @@ pub const App = struct {
                     // não vale mais, mesmo que o próximo quadro saia igual.
                     if ((e.type >= c.SDL_EVENT_WINDOW_FIRST and e.type <= c.SDL_EVENT_WINDOW_LAST) or
                         e.type == c.SDL_EVENT_RENDER_TARGETS_RESET or e.type == c.SDL_EVENT_RENDER_DEVICE_RESET) app.gate.redraw();
+                    // O desenho guardado nas texturas das camadas se perdeu junto.
+                    if (e.type == c.SDL_EVENT_RENDER_TARGETS_RESET or e.type == c.SDL_EVENT_RENDER_DEVICE_RESET) @import("ui/camada.zig").invalidate();
                     // Escolhendo um elemento no Inspetor: o clique escolhe e não chega ao app.
                     if (inspetor.takeEvent(&e)) {
                         got = c.SDL_PollEvent(&e);
@@ -4098,6 +4101,7 @@ pub const App = struct {
             input = true;
             if ((e.type >= c.SDL_EVENT_WINDOW_FIRST and e.type <= c.SDL_EVENT_WINDOW_LAST) or
                 e.type == c.SDL_EVENT_RENDER_TARGETS_RESET or e.type == c.SDL_EVENT_RENDER_DEVICE_RESET) app.gate.redraw();
+            if (e.type == c.SDL_EVENT_RENDER_TARGETS_RESET or e.type == c.SDL_EVENT_RENDER_DEVICE_RESET) @import("ui/camada.zig").invalidate();
             const for_list = e.type == c.SDL_EVENT_KEY_DOWN and autocomplete.takeSdlKey(e.key.key, e.key.mod);
             if (e.type == c.SDL_EVENT_MOUSE_MOTION) {
                 const s = app.uiScale();

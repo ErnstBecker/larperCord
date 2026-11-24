@@ -112,6 +112,7 @@ test {
     _ = @import("ui/mascote_contas.zig");
     _ = @import("ui/mascote_visual.zig");
     _ = @import("ui/mascote_reacoes.zig");
+    _ = @import("ui/carimbo.zig");
     _ = @import("ui/fuzzy.zig");
     _ = @import("ui/i18n.zig");
     _ = @import("ui/horario.zig");
