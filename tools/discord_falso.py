@@ -119,7 +119,9 @@ CONTA = None
 
 
 def load_conta(seed):
-    # Loaded by path: under python -I the script's folder is not on sys.path.
+    # Loaded by path: under python -I the script's folder is not on sys.path. No __pycache__
+    # left next to it in the repo.
+    sys.dont_write_bytecode = True
     here = os.path.dirname(os.path.abspath(__file__))
     spec = importlib.util.spec_from_file_location("conta_grande", os.path.join(here, "conta_grande.py"))
     mod = importlib.util.module_from_spec(spec)
