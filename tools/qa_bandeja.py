@@ -427,6 +427,15 @@ def wakeups_of(pid):
     return n
 
 
+def main_wakeups(a):
+    """Vezes que a thread principal do app foi acordada (trocas de contexto)."""
+    n = 0
+    for line in Path(f"/proc/{a.p.pid}/task/{a.p.pid}/status").read_text().splitlines():
+        if line.startswith(("voluntary_ctxt_switches:", "nonvoluntary_ctxt_switches:")):
+            n += int(line.split()[1])
+    return n
+
+
 def rss_of(pid):
     for line in Path(f"/proc/{pid}/status").read_text().splitlines():
         if line.startswith("VmRSS:"):
@@ -550,8 +559,12 @@ def full_flow():
     # Na bandeja a janela vai embora com o renderizador e as texturas, não só se esconde.
     check("na bandeja, a janela sai do X (destruída, não só escondida)", wait_until(lambda: not windows(), 3) is True, f"{len(windows())} janela(s)")
     time.sleep(2)
+    w0 = main_wakeups(a)
     cpu_hidden = cpu_percent(a, 10)
+    wake_main = (main_wakeups(a) - w0) / 10
     check("escondido: quase nada de CPU", cpu_hidden < 1.0, f"{cpu_hidden:.2f}% com a janela escondida, {cpu_open:.2f}% com ela aberta")
+    # Sem janela nenhuma, o SDL_WaitEvent olharia a fila a cada 1 ms (uns mil por segundo).
+    check("e o laço dorme: a thread principal quase não acorda", wake_main <= 10, f"{wake_main:.1f} despertares/s")
     pss_tray, rss_tray = a.pss_kb(), rss_of(a.p.pid)
     print(f"       RAM: PSS {pss_open} KB aberta, {pss_tray} KB na bandeja; RSS {rss_open} KB aberta, {rss_tray} KB na bandeja")
     check("na bandeja usa menos memória que aberta", pss_tray < pss_open - 2048, f"{pss_open - pss_tray} KB a menos")
