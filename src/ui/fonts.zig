@@ -87,22 +87,10 @@ fn onGlyphMissing(cp: c_uint) callconv(.c) void {
         // bloco dela, como nas outras escritas.
     }
     if (blockToSearch(cp)) |b| {
-        if (misses.note(b, cp) or noteRetry(cp)) return;
+        // Bloco já procurado: a letra que falta na fonte dele procura uma só dela, uma vez.
+        if (misses.note(b, cp) or misses.noteRetry(cp)) return;
     }
     noteMissing(cp);
-}
-
-/// Letras sem fonte num bloco que já ganhou uma: cada uma procura outra, uma vez.
-var retry_buf: [16]u32 = undefined;
-var retry_n: usize = 0;
-
-fn noteRetry(cp: u32) bool {
-    if (std.mem.indexOfScalar(u32, missing_buf[0..missing_n], cp) != null) return false;
-    if (std.mem.indexOfScalar(u32, retry_buf[0..retry_n], cp) != null) return true;
-    if (retry_n == retry_buf.len) return false;
-    retry_buf[retry_n] = cp;
-    retry_n += 1;
-    return true;
 }
 
 fn noteMissing(cp: u32) void {
@@ -158,7 +146,7 @@ pub fn missingLetters() []const u32 {
 
 /// O quadro que acabou pediu fontes: precisa de outro, mesmo sem evento nenhum.
 pub fn scriptsWanted() bool {
-    return std.mem.indexOfScalar(bool, &wanted, true) != null or misses.anyWanted() or retry_n > 0;
+    return std.mem.indexOfScalar(bool, &wanted, true) != null or misses.anyWanted();
 }
 
 /// As famílias de fontes instaladas no dispositivo, em ordem alfabética e sem
@@ -389,8 +377,8 @@ pub const Fonts = struct {
             const w = misses.next() orelse break;
             f.searchBlock(w.block, w.cp);
         }
-        for (retry_buf[0..retry_n]) |cp| f.searchBlock(font_blocks.of(cp).?, cp);
-        retry_n = 0;
+        var retry: [font_blocks.Misses.retry_max]u32 = undefined;
+        for (misses.takeRetries(&retry)) |cp| f.searchBlock(font_blocks.of(cp).?, cp);
     }
 
     fn searchBlock(f: *Fonts, b: font_blocks.Block, cp: u32) void {
@@ -421,11 +409,9 @@ pub const Fonts = struct {
             f.extras_n += 1;
             break :blk &f.extras[f.extras_n - 1];
         };
-        if (x.n == x.blocks.len) return false;
-        var at = x.n;
-        while (at > 0 and x.blocks[at - 1] > b) : (at -= 1) x.blocks[at] = x.blocks[at - 1];
-        x.blocks[at] = b;
-        x.n += 1;
+        // Já vale neste bloco e a letra faltou mesmo assim (a face em que ela é a fonte principal,
+        // que não tem as faixas do emoji): entrar de novo só gastaria o teto e refaria as faces.
+        if (!font_blocks.addSorted(&x.blocks, &x.n, b)) return false;
         f.blocks_on.set(b);
         f.blocks_n += 1;
         // A primeira vez, a fonte entra; depois, só alarga as faixas em que vale.
