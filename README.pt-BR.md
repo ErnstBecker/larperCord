@@ -158,8 +158,11 @@ O cliente oficial é um navegador inteiro disfarçado de app. No mesmo PC:
   js/ts, py, rust, go, sh, json, lua…) e botão "Copiar"; prévia acima da caixa enquanto se digita.
 - **Vídeos tocando na conversa** (anexos e links diretos para .mp4/.webm) com o **FFmpeg 7, 8 ou 9,
   se tiver** (carregado só no primeiro play, sem dependência de build): play/pausa,
-  barra de progresso, som; até 480p e ~30 qps. Sem FFmpeg, o vídeo abre no navegador. No Linux, é o
-  pacote `ffmpeg` da distro. O Windows não tem, então Configurações → Chat → Vídeos busca uma vez
+  barra de progresso, som e tela cheia (o botão, dois cliques ou F: a janela vai para a tela cheia,
+  os controles somem enquanto toca, espaço, setas e M funcionam, Esc devolve a janela como estava);
+  até 480p na conversa, até o tamanho da tela (no máximo 1080p) em tela cheia, e ~30 qps. Sem
+  FFmpeg, o vídeo abre no navegador. No Linux, é o pacote `ffmpeg` da distro. O Windows não tem,
+  então Configurações → Chat → Vídeos busca uma vez
   (Verificar se tem FFmpeg, depois Baixar FFmpeg): cerca de 80 MB de github.com/BtbN/FFmpeg-Builds,
   conferidos com um SHA-256 fixo, cerca de 128 MB em disco em `%LOCALAPPDATA%\larpercord\ffmpeg`.
   "Escolher a pasta do FFmpeg…" ali aceita uma versão "shared" do FFmpeg que você já tem, e sem o

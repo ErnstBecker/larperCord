@@ -31,6 +31,7 @@ const backdrop = @import("backdrop.zig");
 const resize = @import("resize.zig");
 const plugin_panel = @import("plugin_panel.zig");
 const insp = @import("../inspect/captura.zig");
+const video = @import("video.zig");
 
 const Component = *const fn (*d.Ctx, *const kdl.Node, d.Rect) void;
 
@@ -119,6 +120,8 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
 
     d.opt_theme = ctx.th;
     fx.beginFrame();
+    // Vídeo em tela cheia: só ele, e o resto do app nem é montado (nem gasta).
+    if (video.fullscreen()) return videoFull(ctx);
     if (ctx.th.layout) |root| {
         const Look = struct {
             fn get(p: *const anyopaque, name: []const u8) ?bool {
@@ -250,6 +253,28 @@ pub fn frame(ctx: *d.Ctx, placed: *std.ArrayList(layout.Placed), previews: []con
     // A conversão do IME num campo que não é a caixa do chat: por cima de tudo, no cursor dele.
     @import("ime.zig").floating(ctx);
     // O que abriu depois dos popups (Configurações, paleta, atalhos) também é desta janela.
+    popup.claim(ctx.st, false);
+}
+
+/// O quadro com o vídeo em tela cheia (ui/video.zig): ele por cima de tudo, com o teclado
+/// dele. Por cima dele, só o aviso passageiro e a chamada chegando; dos atalhos, ficam o
+/// mudo e o ensurdecer (os outros abririam coisas por baixo do vídeo).
+fn videoFull(ctx: *d.Ctx) void {
+    c.ImGui_End();
+    popup.claim(ctx.st, false);
+    @import("editor_imagem.zig").varrer(ctx.st);
+    var sc = insp.scope("video", ctx.win, null, 0, false);
+    video.drawFull(ctx);
+    insp.endScope(sc, 0);
+    sc = insp.scope("toast", ctx.win, null, 0, false);
+    toast(ctx);
+    insp.endScope(sc, 0);
+    sc = insp.scope("incoming-call", ctx.win, null, 0, false);
+    @import("chamada.zig").overlay(ctx);
+    insp.endScope(sc, 0);
+    const kb = &ctx.st.teclas;
+    if (teclas.pressed(kb, ctx.io, .mutar, false)) ctx.act(.toggle_mute);
+    if (teclas.pressed(kb, ctx.io, .ensurdecer, false)) ctx.act(.toggle_deafen);
     popup.claim(ctx.st, false);
 }
 

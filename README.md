@@ -156,8 +156,11 @@ The official client is a whole browser dressed up as an app. On the same PC:
   js/ts, py, rust, go, sh, json, lua…) with a "Copy" button; a preview above the box while you type.
 - **Videos playing in the conversation** (attachments and direct .mp4/.webm links) with **FFmpeg 7, 8
   or 9, if present** (loaded only on the first play, no build dependency): play/pause,
-  progress bar, sound; up to 480p and about 30 fps. Without FFmpeg, the video opens in the browser. On
-  Linux it's your distro's `ffmpeg` package. Windows has none, so Settings → Chat → Videos gets it once
+  progress bar, sound and fullscreen (the button, a double-click or F: the window goes fullscreen,
+  the controls hide while it plays, Space, arrows and M work, Esc puts the window back as it was);
+  up to 480p in the conversation, up to the screen size (at most 1080p) in fullscreen, and about
+  30 fps. Without FFmpeg, the video opens in the browser. On Linux it's your distro's `ffmpeg`
+  package. Windows has none, so Settings → Chat → Videos gets it once
   (Check for FFmpeg, then Download FFmpeg): about 80 MB from github.com/BtbN/FFmpeg-Builds, checked
   against a fixed SHA-256, about 128 MB on disk in `%LOCALAPPDATA%\larpercord\ffmpeg`. "Choose FFmpeg
   folder…" there takes a "shared" FFmpeg build you already have, and when FFmpeg isn't found the page
