@@ -397,6 +397,74 @@ fn rememberPixels(app: *App) void {
     for (&refs) |*r| r.remember(app);
 }
 
+// O mascote do canto parado se repete sem ser refeito (ui/carimbo.zig; no invisível, a
+// textura da camada): na volta da bandeja ele aparece igual, e a textura do invisível é
+// refeita no renderizador novo (a de antes saiu com o antigo).
+const pet = @import("ui/mascote_pet.zig");
+var pet_px: [96 * 1024]u8 = undefined;
+var pet_len: usize = 0;
+var pet_rect: Rect = .{ .x = 0, .y = 0, .w = 0, .h = 0 };
+var pet_was: struct { life: u8 = 0, away: bool = false, ui: bool = false, status: u8 = 0 } = .{};
+/// Por que a última comparação não bateu (o relatório depois do expect).
+var pet_why: []const u8 = "";
+fn petRect() ?Rect {
+    const g = pet.qaDrawn();
+    if (g[2] <= 0) return null;
+    return .{ .x = g[0] - 0.7 * g[2], .y = g[1] - 0.85 * g[2], .w = 1.4 * g[2], .h = 1.45 * g[2] };
+}
+/// Parado e de olhos para a frente (o mouse fora; sem foco, a pose de esperar não vale; a
+/// DM que chega na bandeja não o leva até o ícone na volta).
+fn petQuiet(app: *App) void {
+    const set = &app.st.settings;
+    pet_was = .{ .life = set.mascot_life, .away = set.mascot_away, .ui = set.mascot_ui, .status = set.my_status };
+    set.mascot_life = 0;
+    set.mascot_away = false;
+    set.mascot_ui = false;
+    pet.qaHome();
+    c.ImGuiIO_AddMousePosEvent(app.io, -std.math.floatMax(f32), -std.math.floatMax(f32));
+}
+fn petGhost(app: *App) void {
+    app.st.settings.my_status = 3;
+}
+fn rememberPet(app: *App) void {
+    pet_len = 0;
+    pet_rect = petRect() orelse return;
+    const px = readArea(app, pet_rect, &pet_px) orelse return;
+    pet_len = px.len;
+}
+fn petSame(app: *App) bool {
+    pet_why = "nada guardado antes";
+    if (pet_len == 0) return false;
+    pet_why = "com uma reação ou fora de casa";
+    if (pet.reaction() != .none or pet.mode() != .home) return false;
+    pet_why = "em outro lugar";
+    const r = petRect() orelse return false;
+    if (r.x != pet_rect.x or r.y != pet_rect.y or r.w != pet_rect.w or r.h != pet_rect.h) return false;
+    pet_why = "sem os pixels";
+    const px = readArea(app, r, &crop_buf) orelse return false;
+    pet_why = "pixels diferentes";
+    if (colors(px) < 3 or !std.mem.eql(u8, px, pet_px[0..pet_len])) return false;
+    pet_why = "";
+    return true;
+}
+fn petReport(_: *App) void {
+    if (pet_why.len > 0) std.debug.print("       mascote na volta da bandeja: {s}\n", .{pet_why});
+}
+fn petGhostSame(app: *App) bool {
+    if (!petSame(app)) return false;
+    pet_why = "a textura do invisível não está no renderizador novo";
+    if (!pet.qaGhostTexture(app.win.renderer)) return false;
+    pet_why = "";
+    return true;
+}
+fn petDone(app: *App) void {
+    const set = &app.st.settings;
+    set.mascot_life = pet_was.life;
+    set.mascot_away = pet_was.away;
+    set.mascot_ui = pet_was.ui;
+    set.my_status = pet_was.status;
+}
+
 var releases0: u32 = 0;
 var restores0: u32 = 0;
 var unparked0: u32 = 0;
@@ -684,6 +752,9 @@ pub const ops = [_]Op{
     .{ .wait = 600 },
     expect("um rascunho na caixa", draftKept),
     run(rememberPixels),
+    run(petQuiet),
+    .{ .wait = 800 },
+    run(rememberPet),
     run(memOpen),
     run(countBefore),
     run(pushClose),
@@ -698,9 +769,14 @@ pub const ops = [_]Op{
     run(wakeShow),
     expect("Abrir: a janela e o renderizador voltam, com o atlas das fontes", gpuBack),
     expect("e desenha: tela com cores; o nome do canal e uma pessoa da lista (foto e nome) iguais aos de antes, pixel por pixel", drawsAgain),
+    expect("o mascote do canto parado volta igual, pixel por pixel", petSame),
+    run(petReport),
     .{ .expect = .{ .name = "a imagem volta, e os avatares voltam para a GPU sem baixar de novo", .check = imagesBack, .timeout_ms = 4000 } },
     expect("o rascunho continua na caixa", draftKept),
     shot("bandeja-volta-1"),
+    run(petGhost),
+    .{ .wait = 500 },
+    run(rememberPet),
     run(countBefore),
     run(pushClose),
     expect("de novo para a bandeja: tudo sai outra vez", gpuGone),
@@ -708,6 +784,9 @@ pub const ops = [_]Op{
     run(clickIcon),
     expect("o clique no ícone traz de volta", gpuBack),
     expect("e desenha igual", drawsAgain),
+    expect("o mascote invisível volta igual, com a textura da camada refeita no renderizador novo", petGhostSame),
+    run(petReport),
+    run(petDone),
     .{ .expect = .{ .name = "com a imagem", .check = imagesBack, .timeout_ms = 4000 } },
     expect("e o rascunho", draftKept),
     shot("bandeja-volta-2"),

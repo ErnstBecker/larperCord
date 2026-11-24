@@ -3,7 +3,8 @@
 //! avisos; a pasta de ícones do usuário fica fora do QA), a tela de abertura
 //! desenha o Terminal em cada fase (abertura, conectando, erro, saída) e o
 //! Clássico continua o de antes, e a abertura do demo espera a animação inteira
-//! antes de sair para o app. Sozinho: QA_SUITE=mascote.
+//! antes de sair para o app. O mascote do canto parado, repetido sem refazer e igual
+//! pixel a pixel, fica em qa_mascote_repete.zig. Sozinho: QA_SUITE=mascote.
 const std = @import("std");
 const c = @import("c");
 const App = @import("app.zig").App;
@@ -1630,7 +1631,7 @@ pub const ops = [_]Op{
     run(closeSettings),
     run(playReset),
     run(clearInput),
-
+} ++ @import("qa_mascote_repete.zig").ops ++ [_]Op{
     s("abertura do demo"),
     run(demoOpening),
     expect("conectado, a abertura espera a animação acabar", waitsForIntro),
