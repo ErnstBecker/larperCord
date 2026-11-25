@@ -594,6 +594,11 @@ fn measurePaused(app: *App) bool {
 /// máquina mais lenta), mais folgada, mas abaixo de um núcleo inteiro.
 fn cpuSane(_: *App) bool {
     const slow: f64 = if (c.SDL_getenv("QA_SLOW")) |v| std.fmt.parseFloat(f64, std.mem.span(v)) catch 1 else 1;
+    // As medidas também vão para qa-out: o CI guarda a pasta, e não a saída de erro.
+    var b: [256]u8 = undefined;
+    if (std.fmt.bufPrint(&b, "tocando: {d:.1}% de um núcleo, {d:.1} quadros/s\nsem o visualizador: {d:.1} quadros/s\nparado: {d:.1} quadros/s\n", .{ cpu_playing, fps_playing, fps_noviz, fps_paused })) |t| {
+        _ = c.SDL_SaveFile("qa-out/audio-cpu.txt", t.ptr, t.len);
+    } else |_| {}
     return fps_playing > 15 and fps_playing < 36 and fps_noviz < fps_playing and fps_paused < 7 and
         cpu_playing >= 0 and cpu_playing < @min(40 * slow, 90);
 }
